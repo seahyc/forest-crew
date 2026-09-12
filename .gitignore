@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+playtests/
+.tardigrade/
+design/references/
+.worktrees/
+
+.visual-lab/
+
+# Private iteration material and generated output
+dist-public/
+design/
+research/
+.agent-data/
+.agent-home/
+*.log
+.DS_Store
+
+# Owner-only maintenance context (not required to run or contribute)
+AGENTS.md
+HAND-WALK-HANDOFF.md
+scripts/verify-oracle.mjs
+scripts/PUBLISH-PLAN.md
+docs/COLLABORATION-AUDIT.md

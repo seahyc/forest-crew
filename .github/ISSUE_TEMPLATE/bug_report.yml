@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible Forest Crew problem without sharing private recordings.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please do not attach camera recordings, raw camera frames, credentials, or private playtest artifacts. Use the Security policy for vulnerabilities.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the route, controls used, and a minimal sequence.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Version or revision
+      description: Public build, commit, or branch if known.
+  - type: input
+    id: environment
+    attributes:
+      label: Browser, OS, and device
+      placeholder: Chrome 140, macOS 16, desktop
+  - type: textarea
+    id: safe-evidence
+    attributes:
+      label: Privacy-safe evidence
+      description: Paste redacted text logs or describe a synthetic fixture. Do not upload a real-person camera recording.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I have excluded camera recordings, raw camera frames, credentials, personal data, and private playtest artifacts.
+          required: true

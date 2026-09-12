@@ -1,0 +1,11 @@
+import {chromium} from 'playwright';
+import {writeFile} from 'node:fs/promises';
+const base='https://seahyingcong.com',browser=await chromium.launch({headless:true,channel:'chrome',args:['--use-angle=metal']});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:900}});await page.addInitScript(()=>localStorage.setItem('forest-crew-recording','off'));const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+ const making=await page.goto(base+'/making/');const card=page.locator('a[href="/making/forest-crew-grove-01/"]').first();await card.waitFor();const image=card.locator('img');await image.scrollIntoViewIfNeeded();await image.evaluate(img=>img.decode());await page.screenshot({path:'playtests/grove-01/live-making.png'});const cover=await image.evaluate(i=>({loaded:i.complete&&i.naturalWidth>0,alt:i.alt}));
+ const alias=await page.goto(base+'/projects/forest-crew-grove-01/');await page.waitForURL('**/making/forest-crew-grove-01/');const aliasTarget=page.url();
+ await page.goto(base+'/making/forest-crew-grove-01/?view=scene&qa=1');await page.waitForFunction(()=>window.__forestQA?.ready(),null,{timeout:60000});await page.locator('#loading').waitFor({state:'hidden',timeout:60000});await page.waitForTimeout(2000);await page.screenshot({path:'playtests/grove-01/live-scene.png'});
+ const runtime=await page.evaluate(()=>({avatar:window.__forestQA.avatar().ready,meshCount:window.__forestQA.scene.meshes.length,firefighterPieces:window.__forestQA.scene.meshes.filter(m=>m.name.startsWith('firefighter-')&&m.parent).length,flameAtlases:window.__forestQA.scene.textures.filter(t=>t.url?.includes('fire-atlas')&&t.isReady()).length,maxFPS:window.__forestQA.scene.getEngine().maxFPS,assets:[...document.querySelectorAll('script[src]')].map(s=>s.src)}));
+ const report={makingStatus:making.status(),cover,aliasStatus:alias.status(),aliasTarget,runtime,errors,pass:making.status()===200&&cover.loaded&&aliasTarget===base+'/making/forest-crew-grove-01/'&&runtime.avatar&&runtime.firefighterPieces>=10&&runtime.flameAtlases===3&&runtime.maxFPS===60&&!errors.length};await writeFile('playtests/grove-01/live-publication.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));if(!report.pass)process.exitCode=1;
+}finally{await browser.close();}
