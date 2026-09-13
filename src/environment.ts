@@ -25,7 +25,7 @@ export function createEnvironment(canvas:HTMLCanvasElement){
  const pipeline=new DefaultRenderingPipeline('filmic image',true,scene,[camera]);pipeline.samples=quality().samples;pipeline.fxaaEnabled=quality().fxaa;pipeline.bloomEnabled=true;pipeline.bloomThreshold=1.18;pipeline.bloomWeight=.09;pipeline.bloomKernel=32;pipeline.imageProcessingEnabled=true;pipeline.imageProcessing.toneMappingEnabled=true;pipeline.imageProcessing.toneMappingType=1;pipeline.imageProcessing.exposure=1;pipeline.imageProcessing.contrast=1.14;
  const pbr=(name:string,color:string,rough=.6,metal=0)=>{const m=new PBRMaterial(name,scene);m.albedoColor=C(color).toLinearSpace();m.roughness=rough;m.metallic=metal;m.maxSimultaneousLights=5;return m;};
  const pink=pbr('lacquered warm pink deck','#f37aaa',.22),pinkEdge=pbr('pink edge fascia','#c74775',.34),ivory=pbr('warm ivory enamel','#f1e6d4',.35),chrome=pbr('brushed polished chrome','#e6eeed',.17,.9),coral=pbr('coral pump enamel','#e9979f',.28),dark=pbr('charcoal fittings','#202725',.38),leaf=pbr('palm leaf green','#477b35',.48),leafLight=pbr('sunlit fronds','#87a941',.44),trunk=pbr('fibrous palm bark','#9c8154',.72);
- pink.clearCoat.isEnabled=true;pink.clearCoat.intensity=.9;pink.clearCoat.roughness=.1;leaf.backFaceCulling=false;leafLight.backFaceCulling=false;leaf.twoSidedLighting=true;leafLight.twoSidedLighting=true;
+ pink.clearCoat.isEnabled=true;pink.clearCoat.intensity=.9;pink.clearCoat.roughness=.1;
  const basalt=pbr('rough volcanic basalt','#535753',.8);basalt.albedoTexture=new Texture(`${base}textures/basalt-color.jpg`,scene);basalt.bumpTexture=new Texture(`${base}textures/basalt-normal.jpg`,scene);basalt.bumpTexture.level=.28;basalt.clearCoat.isEnabled=true;basalt.clearCoat.intensity=.08;basalt.clearCoat.roughness=.45;
  const wetRock=basalt.clone('wet basalt shore')!;wetRock.albedoColor=C('#343b3e').toLinearSpace();wetRock.roughness=.42;wetRock.clearCoat.isEnabled=true;wetRock.clearCoat.intensity=.3;wetRock.clearCoat.roughness=.28;
  const surface=basalt.clone('walkable lava')!;(surface.albedoTexture as Texture).uScale=4;(surface.albedoTexture as Texture).vScale=7;(surface.bumpTexture as Texture).uScale=4;(surface.bumpTexture as Texture).vScale=7;
@@ -77,23 +77,28 @@ export function createEnvironment(canvas:HTMLCanvasElement){
  tube('pump gauge needle',[new Vector3(-4.5,.99,-.404),new Vector3(-4.43,1.07,-.404)],.007,dark);
  const port=MeshBuilder.CreateCylinder('hose outlet',{height:.16,diameter:.2,tessellation:20},scene);port.rotation.x=Math.PI/2;port.position.set(-4.5,.48,-.4);port.material=chrome;
  tube('water intake line',[new Vector3(-5,.4,.3),new Vector3(-6,.12,.7),new Vector3(-7.2,-.2,.5),new Vector3(-8,-.7,.2)],.067,ivory);
- // Layered coconut crowns: upright spears, spreading mature fronds and drooping old leaves.
+ // Layered coconut crowns: closed folded leaflets catch light as volumes rather than crossed cards.
  const treeBases:{x:number,z:number}[]=[];
  function palm(x:number,z:number,h:number){treeBases.push({x,z});
   const bend=(rnd()-.5)*2.0,points=[];for(let i=0;i<=18;i++){const t=i/18;points.push(new Vector3(x+bend*t*t,h*t,z+.5*t*t));}
   const stem=MeshBuilder.CreateTube('curved palm trunk',{path:points,radiusFunction:i=>.18*(1-i/30),tessellation:12,cap:Mesh.CAP_ALL},scene);stem.material=trunk;cast(stem);colliders.push(stem);
   const top=points.at(-1)!,vertices:number[]=[],indices:number[]=[],colors:number[]=[];
-  for(let k=0;k<16;k++){
-   const a=k*2.399+rnd()*.2,dir=new Vector3(Math.cos(a),0,Math.sin(a)),side=new Vector3(-dir.z,0,dir.x),young=k<3,mature=k<12;
-   const L=young?1.5+rnd():2.5+rnd()*1.3,rise=young?2.1:mature?.8:-.05,droop=young?.4:mature?1.4:2.0;
-   const at=(t:number)=>top.add(dir.scale(L*t)).add(new Vector3(0,rise*Math.sin(t*Math.PI*.7)-droop*t*t,0));
-   for(let j=1;j<19;j++){const t=j/20,anchor=at(t),len=(young?.32:.76)*Math.pow(Math.sin(t*Math.PI),.6)+.04;
-    for(const sign of [-1,1]){const index=vertices.length/3;
-     const tip=anchor.add(side.scale(sign*len)).add(dir.scale(.3)).add(new Vector3(0,-.18-.12*t,0));
-     const mid=Vector3.Lerp(anchor,tip,.5).add(new Vector3(0,.055,0));const width=.085*(1-t*.5);
-     const pts=[anchor.add(dir.scale(-.025)),mid.add(dir.scale(-width)),tip,mid.add(dir.scale(width)),anchor.add(dir.scale(.038)),mid.add(new Vector3(0,.022,0))];
-     for(const v of pts){vertices.push(v.x,v.y,v.z);const c=.92+rnd()*.08;colors.push(c,c,young?.5:.65,1);}
-     indices.push(index,index+1,index+5,index+1,index+2,index+5,index+2,index+3,index+5,index+3,index+4,index+5,index+4,index,index+5);
+  const addClosedBlade=(path:Vector3[],widths:number[],folds:number[],twist:number,green:number)=>{
+   const first=vertices.length/3,last=path.length-1;
+   for(let i=0;i<=last;i++){const tangent=(i===last?path[i].subtract(path[i-1]):path[i+1].subtract(path[i])).normalize(),flat=new Vector3(-tangent.z,0,tangent.x).normalize(),normal=Vector3.Cross(tangent,flat).normalize(),spin=twist*(i/last-.15),across=flat.scale(Math.cos(spin)).add(normal.scale(Math.sin(spin))).normalize(),face=Vector3.Cross(tangent,across).normalize(),w=widths[i],f=folds[i],c=path[i];
+    for(const v of [c.subtract(across.scale(w)),c.add(face.scale(f)),c.add(across.scale(w)),c.subtract(face.scale(f*.42))]){vertices.push(v.x,v.y,v.z);colors.push(.88+rnd()*.12,.9+rnd()*.1,green,1);}
+   }
+   for(let i=0;i<last;i++)for(let q=0;q<4;q++){const a=first+i*4+q,b=first+i*4+(q+1)%4,c=first+(i+1)*4+q,d=first+(i+1)*4+(q+1)%4;indices.push(a,c,b,b,c,d);}
+   indices.push(first+2,first+1,first,first,first+3,first+2);const end=first+last*4;indices.push(end,end+1,end+2,end+2,end+3,end);
+  };
+  for(let k=0;k<14;k++){
+   const a=k*2.399+rnd()*.22,dir=new Vector3(Math.cos(a),0,Math.sin(a)),side=new Vector3(-dir.z,0,dir.x),young=k<3,mature=k<11;
+   const L=young?1.65+rnd()*.55:2.7+rnd()*1.15,rise=young?2.05:mature?.85:-.08,droop=young?.32:mature?1.3:1.9,roll=(rnd()-.5)*.35;
+   const at=(t:number)=>top.add(dir.scale(L*t)).add(side.scale(Math.sin(t*Math.PI)*roll)).add(new Vector3(0,rise*Math.sin(t*Math.PI*.72)-droop*t*t,0));
+   const rachisPath=[];for(let j=0;j<=7;j++)rachisPath.push(at(j/7));addClosedBlade(rachisPath,rachisPath.map((_,j)=>.035-j*.0037),rachisPath.map((_,j)=>.025-j*.0026),roll,young?.55:.67);
+   for(let j=1;j<=9;j++){const t=j/10,anchor=at(t),len=(young?.34:.78)*Math.pow(Math.sin(t*Math.PI),.62)+.1;
+    for(const sign of [-1,1]){const sweep=.18+.16*t,down=.08+.18*t+(mature?0:.06),tip=anchor.add(side.scale(sign*len)).add(dir.scale(sweep)).add(new Vector3(0,-down,0)),bow=side.scale(sign*(.05+.06*Math.sin(t*Math.PI))),p1=Vector3.Lerp(anchor,tip,.34).add(bow).add(new Vector3(0,.04,0)),p2=Vector3.Lerp(anchor,tip,.7).add(bow.scale(.55)).add(new Vector3(0,-.02,0)),width=.072*(.75+.25*Math.sin(t*Math.PI));
+     addClosedBlade([anchor,p1,p2,tip],[width*.55,width,width*.62,.008],[.018,.035,.024,.005],sign*(.52+.35*t)+(rnd()-.5)*.18,young?.54:.66);
     }
    }
   }

@@ -10,7 +10,7 @@ const taskId={type:'string',enum:TASKS};
 const tool=(name,description,properties)=>({type:'function',name,description,inputSchema:OBJECT(properties)});
 export const CREW_TOOLS=[
  tool('observe','Read authoritative supply state, own mailbox, actor positions and successful events. No cost.',{}),
- tool('claim_task','Reserve a job with the latest observed revision. Re-observe on stale_revision.',{taskId,expectedRevision:{type:'integer'}}),
+ tool('claim_task','Reserve a job using an observed revision. Unrelated messages and jobs do not invalidate it; re-observe if this job changed (stale_revision).',{taskId,expectedRevision:{type:'integer'}}),
  tool('perform_task','Walk to your claimed job and do it. Takes several seconds. Structured blockers make no progress. operate_pump is a maintained post: stay there until released.',{taskId}),
  tool('release_task','Release a claim or maintained pump post. Releasing the operator immediately removes pressure.',{taskId}),
  tool('message_actor','Send a brief request or explicit acceptance to a teammate or player. Use this to negotiate useful complementary jobs; names do not prescribe roles.',{to:{type:'string',enum:['player',...IDS]},text:STRING}),
@@ -22,7 +22,7 @@ export const CREW_TOOLS=[
 export const GAME_OXYGEN_COST={'gpt-5.6-luna':2,'gpt-5.6-terra':3,'gpt-5.6-sol':4,'gpt-5.3-codex-spark':1};
 export const createCrewRoster=(models=['gpt-5.6-sol','gpt-5.6-sol'])=>IDS.map((id,i)=>({id,model:models[i],position:{x:i?1.4:-1.8,y:0,z:-2},yaw:0,activity:'waiting',taskId:null}));
 export function createCrewSession({provider,models=['gpt-5.6-sol','gpt-5.6-sol'],skillStore,onEvent=()=>{},now=()=>Date.now(),maxDecisions=6}={}){
- const world=createCrewWorld({claimLeaseRevisions:100});
+ const world=createCrewWorld({claimLeaseRevisions:100,taskScopedClaims:true});
  const id=randomUUID();let sequence=0,stopped=false,status='starting',error=null,lastPlayerAt=now(),latestPlayer=null;
  const actors=createCrewRoster(models).map(actor=>({...actor,decisions:0,handle:null,job:null,thinking:false,lastRevision:-1}));
  const traces=[];let lastPlayerSignal=0;
@@ -35,7 +35,7 @@ export function createCrewSession({provider,models=['gpt-5.6-sol','gpt-5.6-sol']
   if(now()-startedAt>300000||now()-lastPlayerAt>15000){void stop('idle_or_time_limit');return;}
   for(const a of actors){const j=a.job;if(!j)continue;const dx=j.target.x-a.position.x,dz=j.target.z-a.position.z,d=Math.hypot(dx,dz),step=Math.min(d,Math.max(0,Math.min(dt,.1))*1.8);
    if(d>.05){a.position.x+=dx/d*step;a.position.z+=dz/d*step;a.yaw=Math.atan2(dx,dz);a.activity='walking';}
-   else{a.activity='working';j.work+=dt;if(j.work>=1.2){const result=call(a.id,'perform_task',{taskId:j.taskId},j.callId);a.job=null;a.activity=result.ok&&j.taskId==='operate_pump'?'pumping':'idle';a.taskId=result.ok&&j.taskId==='operate_pump'?j.taskId:null;trace('tool-result',{actorId:a.id,tool:'perform_task',args:{taskId:j.taskId},result});j.resolve(result);}}
+   else{a.yaw=Math.atan2(-4.5-a.position.x,.1-a.position.z);a.activity='working';j.work+=dt;if(j.work>=1.2){const result=call(a.id,'perform_task',{taskId:j.taskId},j.callId);a.job=null;a.activity=result.ok&&j.taskId==='operate_pump'?'pumping':'idle';a.taskId=result.ok&&j.taskId==='operate_pump'?j.taskId:null;trace('tool-result',{actorId:a.id,tool:'perform_task',args:{taskId:j.taskId},result});j.resolve(result);}}
   }
  }
  const toolCalls=new Map();
@@ -88,7 +88,7 @@ export function createCrewSession({provider,models=['gpt-5.6-sol','gpt-5.6-sol']
  }
  async function start(){
   try{
-   for(const a of actors){a.handle=await provider.createActor({id:a.id,model:a.model,tools:CREW_TOOLS,instructions:`You are ${a.id}, an embodied firefighter in Forest Crew. Your teammate is ${IDS.find(x=>x!==a.id)} and the human is player. You both can do every supply job. Choose work from the observed situation, communicate requests and acceptances, and cooperate. Tools enforce the rules. The human handles aiming and extinguishing in this first crew slice. Do not claim fires are extinguished from supply setup alone. Each decision costs game oxygen; use at most 12 tools per turn, then yield. Maintain your post until a handover is accepted. You may save evidence-backed lessons; you start without predefined procedures. Game tools and messages are the only world access. Your name is not a fixed job assignment.`});if(stopped){await (provider.disposeActor?.(a.handle)??provider.interrupt(a.handle));return snapshot();}}
+   for(const a of actors){a.handle=await provider.createActor({id:a.id,model:a.model,tools:CREW_TOOLS,instructions:`You are ${a.id}, an embodied firefighter in Forest Crew. Your teammate is ${IDS.find(x=>x!==a.id)} and the human is player. You both can do every supply job. Choose work from the observed situation, communicate requests and acceptances, and cooperate. Start a useful unclaimed job promptly while coordinating; avoid redundant acknowledgements or repeated negotiation when a teammate has already agreed. Tools enforce the rules. The human handles aiming and extinguishing in this first crew slice. Do not claim fires are extinguished from supply setup alone. Each decision costs game oxygen; use at most 12 tools per turn, then yield. Maintain your post until a handover is accepted. You may save evidence-backed lessons; you start without predefined procedures. Game tools and messages are the only world access. Your name is not a fixed job assignment.`});if(stopped){await (provider.disposeActor?.(a.handle)??provider.interrupt(a.handle));return snapshot();}}
    status='running';trace('crew-started',{models});for(const a of actors)void run(a);
   }catch{if(!stopped){status='unavailable';error='Could not start the selected models. Check the local crew bridge.';trace('crew-unavailable');}for(const a of actors)if(a.handle)await (provider.disposeActor?.(a.handle)??provider.interrupt(a.handle));}
   return snapshot();

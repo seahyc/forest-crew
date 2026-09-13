@@ -101,3 +101,18 @@ test('bounds observation mailbox and does not equate acknowledgement with task c
  assert.equal(world.snapshot().fire,'burning');assert.equal(world.snapshot().tasks.suppress_fire.status,'pending');
  assert.equal(call(world,'engineer','other-observe','observe',{}).mailbox.length,0);
 });
+
+test('task-scoped claims tolerate independent work and communication but reject changed targets',()=>{
+ const world=createCrewWorld({taskScopedClaims:true});let seq=0;
+ const call=(actorId,tool,args)=>world.execute({actorId,tool,args,callId:`scoped-${++seq}`});
+ const revision=world.snapshot().revision;
+ assert.equal(call('engineer','message_actor',{to:'firefighter',text:'I can repair the pump.'}).ok,true);
+ assert.equal(call('engineer','claim_task',{taskId:'repair_pump',expectedRevision:revision}).ok,true);
+ assert.equal(call('firefighter','claim_task',{taskId:'fetch_hose',expectedRevision:revision}).ok,true);
+ assert.equal(call('firefighter','claim_task',{taskId:'repair_pump',expectedRevision:revision}).error,'stale_revision');
+ const beforeRelease=world.snapshot().revision;
+ assert.equal(call('engineer','release_task',{taskId:'repair_pump'}).ok,true);
+ assert.equal(call('firefighter','claim_task',{taskId:'repair_pump',expectedRevision:beforeRelease}).error,'stale_revision');
+ assert.equal(call('firefighter','claim_task',{taskId:'repair_pump',expectedRevision:world.snapshot().revision}).ok,true);
+ for(const expectedRevision of [-1,world.snapshot().revision+1])assert.equal(call('engineer','claim_task',{taskId:'connect_hose',expectedRevision}).error,'stale_revision');
+});

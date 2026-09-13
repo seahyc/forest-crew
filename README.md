@@ -23,6 +23,8 @@ Grove 01 runs without model-provider credentials. Camera tracking runs in the br
 
 The **local AI crew** is enabled by default. The server confirms the waiting roster before the firefighters appear; model calls start only when your hands activate play. Sign into the Codex CLI with your own account first. Two real model actors prepare and maintain your water supply. See [the crew setup and limits](server/README.md). This crew mode is not enabled on the public Grove 01 route.
 
+The teal and amber accents identify teammates, not fixed jobs: either agent can fetch/connect the hose or repair/staff the pump. Work gestures reflect their actual task state. After setup, one maintains the pump and the other stands by; autonomous fire suppression is not part of this slice.
+
 Useful checks:
 
 ```sh

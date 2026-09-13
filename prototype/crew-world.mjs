@@ -44,7 +44,8 @@ export function createCrewWorld(options={}){
   observe(actorId,args){if(!exact(args,[]))return fail('invalid_args');return observe(actorId);},
   claim_task(actorId,args){
    if(!exact(args,['taskId','expectedRevision'])||!Object.hasOwn(TASKS,args.taskId)||!Number.isSafeInteger(args.expectedRevision))return fail('invalid_args');
-   if(args.expectedRevision!==state.revision)return fail('stale_revision',{expectedRevision:state.revision});
+   const changedAt=options.taskScopedClaims===true?events.findLast(event=>event.taskId===args.taskId)?.revision??0:state.revision;
+   if(args.expectedRevision<changedAt||args.expectedRevision>state.revision||args.expectedRevision<0)return fail('stale_revision',{expectedRevision:state.revision});
    const task=state.tasks[args.taskId],leaseExpired=task.status!=='active'&&task.owner!==null&&state.revision>=task.leaseUntilRevision;if(task.status==='completed')return fail('task_completed',{taskId:task.id});if(task.owner!==null&&!leaseExpired&&task.owner!==actorId)return fail('task_claimed',{taskId:task.id,owner:task.owner,leaseUntilRevision:task.leaseUntilRevision});
    if(state.actors[actorId].busy&&state.actors[actorId].busy!==task.id)return fail('actor_busy',{taskId:state.actors[actorId].busy});
    const priorOwner=task.owner;if(task.owner===actorId&&!leaseExpired){task.leaseUntilRevision=state.revision+claimLeaseRevisions+1;record('TaskClaimRenewed',actorId,{taskId:task.id,leaseUntilRevision:task.leaseUntilRevision});return success({task:clone(task)});}

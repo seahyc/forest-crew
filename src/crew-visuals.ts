@@ -1,5 +1,5 @@
 import { AbstractMesh, Scene, TransformNode, Vector3 } from '@babylonjs/core';
-import { finishAstronaut } from './astronaut-finish';
+import { createCrewActivityRig, finishAstronaut, type CrewActivityRig } from './astronaut-finish';
 import { createAstronaut, type AstronautPose, type GroundedFeet } from './handwalk/avatar';
 import { AssistedGait } from './handwalk/assisted-gait.mjs';
 
@@ -9,6 +9,7 @@ export type CrewActorSnapshot = {
   yaw: number;
   activity: string;
   taskId: string | null;
+  thinking?: boolean;
 };
 
 export type CrewSnapshot = {
@@ -36,7 +37,8 @@ export function createCrewVisuals(scene: Scene, shadows: ShadowCaster) {
       id, root, avatar, gait,
       targetPosition: Vector3.Zero(), targetYaw: 0,
       previousPosition: Vector3.Zero(), phase: id === 'engineer' ? Math.PI : 0,
-      visible: false, initialized: false, activity: '', taskId: null as string | null,
+      visible: false, initialized: false, activity: '', taskId: null as string | null, thinking: false, elapsed: 0,
+      activityRig: null as CrewActivityRig | null,
     };
   });
 
@@ -45,7 +47,8 @@ export function createCrewVisuals(scene: Scene, shadows: ShadowCaster) {
     await member.avatar.ready;
     if (disposed) return;
     const meshes = member.root.getChildMeshes();
-    finishAstronaut(meshes);
+    finishAstronaut(meshes, member.id);
+    member.activityRig = createCrewActivityRig(member.root.getChildMeshes());
     for (const mesh of member.root.getChildMeshes()) {
       mesh.receiveShadows = true;
       shadows.addShadowCaster(mesh);
@@ -56,6 +59,7 @@ export function createCrewVisuals(scene: Scene, shadows: ShadowCaster) {
     member.visible = false;
     member.initialized = false;
     member.gait.reset();
+    member.activityRig?.reset();
     member.root.setEnabled(false);
   }
 
@@ -75,6 +79,8 @@ export function createCrewVisuals(scene: Scene, shadows: ShadowCaster) {
       member.targetYaw = actor.yaw;
       member.activity = actor.activity;
       member.taskId = actor.taskId;
+      member.thinking = actor.thinking === true;
+      member.elapsed += elapsed;
       if (!member.initialized) {
         member.root.position.copyFrom(member.targetPosition);
         member.root.rotation.y = member.targetYaw;
@@ -111,11 +117,15 @@ export function createCrewVisuals(scene: Scene, shadows: ShadowCaster) {
         { speed, displacement, active: moving },
       );
       const yawRate = elapsed > 0 ? angleDelta(member.root.rotation.y, previousYaw) / elapsed : 0;
+      member.activityRig?.reset();
       member.avatar.applyGroundedPose(pose, support.feet as GroundedFeet, true, {
         dt: elapsed, active: moving, yawRate, speed,
         phase: support.assist.phase,
         cycle: ((support.assist.steps ?? 0) + (support.assist.phase ?? 0)) * Math.PI,
         run: 0, supportSide: support.supportSide,
+      });
+      if (!moving) member.activityRig?.apply({
+        activity: member.activity, taskId: member.taskId, thinking: member.thinking, time: member.elapsed,
       });
       member.previousPosition.copyFrom(member.root.position);
     }
