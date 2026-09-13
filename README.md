@@ -2,9 +2,9 @@
 
 Forest Crew is an embodied cooperative firefighting and forest-restoration game. Walk with camera-tracked hand gestures, aim a hose, suppress fires, and coordinate with provider-backed AI crewmates through an authoritative game world.
 
-[Play Grove 01](https://seahyingcong.com/making/forest-crew-grove-01/) — the current public browser build.
+[Play Grove 01](https://seahyingcong.com/making/forest-crew-grove-01/) — the stable gesture playtest. [AI Crew](https://seahyingcong.com/making/forest-crew-ai-crew/) is the invitation-only hosted cooperation demo.
 
-The canonical development repository is [seahyc/forest-crew](https://github.com/seahyc/forest-crew). The copy under `seahyc.github.io/projects-src/forest-crew/grove-01` is a publication snapshot used to build the website route; this repository is the development source of truth.
+The canonical development repository is [seahyc/forest-crew](https://github.com/seahyc/forest-crew). The milestone copies under `seahyc.github.io/projects-src/forest-crew/` is a publication snapshot used to build the website route; this repository is the development source of truth.
 
 ## Run locally
 

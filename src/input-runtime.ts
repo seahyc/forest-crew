@@ -19,8 +19,8 @@ type InputPreference=InputMode|'auto';
 type InputFrame={active:boolean;forward:number;turn:number;headingTarget?:number|null;gait:any;mode:Mode;aim:{x:number;y:number};spraying:boolean};
 type Options={canvas:HTMLCanvasElement;container:HTMLElement;getHeading:()=>number;onEvent?:(type:string,data:any)=>void};
 
-const CREW_MODE=new URLSearchParams(location.search).get('crew')==='1';
-const BUILD_ID=CREW_MODE?'crew-supply-preview':'grove-01',SCENARIO=CREW_MODE?'agent-supply':'hose-baseline',STALE_MS=220,ONE_HAND_STALE_MS=450;
+const CREW_MODE=new URLSearchParams(location.search).get('crew')==='1'||import.meta.env.VITE_CREW_DEFAULT==='1';
+const BUILD_ID=CREW_MODE?'ai-crew':'grove-01',SCENARIO=CREW_MODE?'agent-supply':'hose-baseline',STALE_MS=220,ONE_HAND_STALE_MS=450;
 const clamp=(value:number)=>Math.max(0,Math.min(1,value));
 const emptyGait=()=>({left:0,right:0,leftLift:0,rightLift:0,stride:0,cadence:0,run:0});
 const formatBytes=(bytes:number)=>bytes<1024?`${bytes} B`:bytes<1048576?`${Math.round(bytes/1024)} KiB`:`${(bytes/1048576).toFixed(1)} MiB`;
@@ -73,7 +73,7 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
 
  const qaMode=new URLSearchParams(location.search).get('qa')==='1';
  const criticalEvents=new Set(['complete','extinguish','gesture-select','calibrated','focus','reset','camera-error','tracker-error']);
- const emit=(type:string,data:any={})=>{const payload={version:'0.2.2',buildId:BUILD_ID,scenario:SCENARIO,fixture:qaMode,inputSource:qaInjected?'sampled-hand-fixture':'camera',...data};playtest.record(type,payload);const now=performance.now();if(playtest.state==='recording'&&(criticalEvents.has(type)||now-lastFlush>=1200)){lastFlush=now;void playtest.flushTelemetry();}onEvent?.(type,payload);};
+ const emit=(type:string,data:any={})=>{const payload={version:'0.2.3',buildId:BUILD_ID,scenario:SCENARIO,fixture:qaMode,inputSource:qaInjected?'sampled-hand-fixture':'camera',...data};playtest.record(type,payload);const now=performance.now();if(playtest.state==='recording'&&(criticalEvents.has(type)||now-lastFlush>=1200)){lastFlush=now;void playtest.flushTelemetry();}onEvent?.(type,payload);};
  const recorder=new CompactRecorder({world:canvas,camera:video,session:()=>playtest.session,startedAt:()=>playtest.started,record:emit,uploadClip:(blob,startMs,endMs)=>playtest.uploadClip(blob,startMs,endMs),publicMode:true,captureWidth:480,captureHeight:270,captureFrameRate:5,videoBitsPerSecond:220000,overlay:()=>({phase:lastFrameState.mode,reason:lastFrameState.spraying?'spraying':inputMode==='one-hand'?oneHand.diagnostics(performance.now()).decision:lastFrameState.active?'moving':'idle',choice:uiTarget?.dataset.action||'',dwell:uiTarget?clamp((performance.now()-uiTargetSince)/900):0,cursorX:lastPointer.x,cursorY:lastPointer.y,cursorVisible:true,cursorTracked:pointerTracked}),onStatus:(state,detail)=>{if(state==='error'){recordingError=detail;recorder.setEnabled(false);playtest.fail(detail);}updateRecordingStatus(playtest);}});
 
  function updateRecordingStatus(snapshot:any){

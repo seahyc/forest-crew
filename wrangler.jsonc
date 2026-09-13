@@ -1,0 +1,13 @@
+{
+  "name": "forest-crew-api",
+  "main": "worker/index.mjs",
+  "account_id": "b6fb17d8164be6988c26d3c2960c9705",
+  "compatibility_date": "2026-09-12",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "PUBLIC_ORIGIN": "https://seahyingcong.com",
+    "CREW_ORIGIN": "https://oracle.seahyingcong.com/forest-crew-api"
+  },
+  "routes": [{"pattern": "seahyingcong.com/api/forest-crew/*", "zone_name": "seahyingcong.com"}]
+}

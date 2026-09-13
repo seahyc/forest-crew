@@ -12,6 +12,8 @@ import {HOSE_ANCHOR} from './handwalk/avatar';
 
 const $=(id:string)=>document.getElementById(id)!;
 const params=new URLSearchParams(location.search),sceneReview=params.get('view')==='scene',qa=params.get('qa')==='1';
+let crewInvite=new URLSearchParams(location.hash.slice(1)).get('crew');
+if(crewInvite)history.replaceState(history.state,'',`${location.pathname}${location.search}`);
 if(sceneReview)document.body.classList.add('scene-review');
 const canvas=$('world') as HTMLCanvasElement;
 const env=createEnvironment(canvas);
@@ -19,7 +21,8 @@ const movement=createLocomotion(env.scene,env.camera,env.colliders,env.spawn,env
 let input:ReturnType<typeof createInputRuntime>;
 const fire=createFireSimulation({onEvent:(type:string,data:any)=>input?.record(type,data)} as any);
 const effects=createFireEffects(env.scene);
-const crew=params.get('crew')==='1'&&!sceneReview?createCrewClient():null;
+const crew=(params.get('crew')==='1'||import.meta.env.VITE_CREW_DEFAULT==='1')&&!sceneReview?createCrewClient({invite:crewInvite}):null;
+crewInvite=null;
 let crewVisuals:Awaited<ReturnType<typeof import('./crew-visuals').createCrewVisuals>>|null=null;
 if(crew)void import('./crew-visuals').then(async({createCrewVisuals})=>{crewVisuals=createCrewVisuals(env.scene,env.shadows);await crewVisuals.ready;}).catch(()=>console.error('Crew visuals unavailable'));
 const playerHeat=createPlayerHeat({onEvent:(type:string,data:any)=>input?.record(type,data)});
