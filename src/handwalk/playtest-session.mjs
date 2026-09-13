@@ -1,4 +1,4 @@
-const VERSION='forest-crew/0.2.1/local-preview',MAX_QUEUE=2*1024*1024,MAX_TELEMETRY=256*1024,MAX_DURATION=10*60*1000,MAX_SESSION=32*1024*1024;
+const VERSION='forest-crew/0.2.2/local-preview',MAX_QUEUE=2*1024*1024,MAX_TELEMETRY=256*1024,MAX_DURATION=10*60*1000,MAX_SESSION=32*1024*1024;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const jsonBytes=value=>new TextEncoder().encode(JSON.stringify(value)).byteLength;
 export class PlaytestSession{

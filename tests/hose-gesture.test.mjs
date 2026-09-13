@@ -4,6 +4,7 @@ import {HoseGestureController} from '../src/hose-gesture.mjs';
 
 const pointing=(id='left',x=.2,y=.6,extra={})=>({id,pointX:x,pointY:y,pointing:true,open:false,fist:false,indexFlex:.1,middleFlex:.7,...extra});
 const open=(id='right',x=.7,y=.4)=>({id,pointX:x,pointY:y,pointing:false,open:true,fist:false,indexFlex:.1,middleFlex:.1});
+const pose=(extra={},id='left',x=.2,y=.6)=>pointing(id,x,y,{aimPose:false,aimHoldPose:false,walkingPose:false,...extra});
 
 test('one pointing hand activates after 150ms with comfortable aim mapping',()=>{
  const hose=new HoseGestureController();
@@ -66,4 +67,59 @@ test('distant pointer handoff requires a fresh dwell',()=>{
  const candidate=hose.update([pointing('right',.8,.2)],180);
  assert.equal(candidate.active,false);assert.equal(candidate.pointerId,'right');assert.equal(candidate.dwell,0);
  assert.equal(hose.update([pointing('right',.8,.2)],330).active,true);
+});
+
+test('geometric aim survives pointing flicker and flex jitter',()=>{
+ const hose=new HoseGestureController();
+ let state=hose.update([pose({aimPose:true,indexFlex:.1,middleFlex:.7})],0);
+ assert.equal(state.blockWalking,true);assert.equal(state.reason,'candidate');
+ state=hose.update([pose({aimPose:true,pointing:false,indexFlex:.8,middleFlex:.05})],150);
+ assert.equal(state.active,true);assert.equal(state.blockWalking,true);
+ state=hose.update([pose({aimHoldPose:true,pointing:false,indexFlex:.05,middleFlex:.9})],180);
+ assert.equal(state.active,true);assert.equal(state.spraying,true);
+});
+
+test('aim hold cannot complete entry dwell after a transient strict aim sample',()=>{
+ const hose=new HoseGestureController();
+ assert.equal(hose.update([pose({aimPose:true})],0).active,false);
+ for(const now of [50,200,400]){
+  const state=hose.update([pose({aimHoldPose:true,pointing:false})],now);
+  assert.equal(state.active,false);assert.equal(state.blockWalking,true);assert.equal(state.dwell,0);
+ }
+ assert.equal(hose.update([pose({aimPose:true,pointing:false})],410).active,false);
+ assert.equal(hose.update([pose({aimPose:true,pointing:false})],560).active,true);
+ assert.equal(hose.update([pose({aimHoldPose:true,pointing:false})],600).active,true);
+});
+
+test('ambiguous geometry stops spray but retains walking block',()=>{
+ const hose=new HoseGestureController();hose.update([pose({aimPose:true})],0);hose.update([pose({aimPose:true})],150);
+ const ambiguous=hose.update([pose({pointing:false})],160);
+ assert.equal(ambiguous.active,false);assert.equal(ambiguous.spraying,false);assert.equal(ambiguous.blockWalking,true);assert.equal(ambiguous.reason,'ambiguous');assert.equal(ambiguous.pointerId,'left');
+ const holdOnly=hose.update([pose({aimHoldPose:true,pointing:false})],200);
+ assert.equal(holdOnly.active,false);assert.equal(holdOnly.blockWalking,true);
+});
+
+test('consecutive walking geometry releases block after 180ms',()=>{
+ const hose=new HoseGestureController();hose.update([pose({aimPose:true})],0);hose.update([pose({aimPose:true})],150);
+ let state=hose.update([pose({walkingPose:true,pointing:false})],160);
+ assert.equal(state.active,false);assert.equal(state.blockWalking,true);assert.equal(state.reason,'walking');
+ state=hose.update([pose({walkingPose:true,pointing:false})],339);assert.equal(state.blockWalking,true);
+ state=hose.update([pose({walkingPose:true,pointing:false})],340);assert.equal(state.blockWalking,false);assert.equal(state.pointerId,null);
+});
+
+test('open, fist, and zero hands immediately release geometric authority',()=>{
+ for(const lost of [[],[pose({open:true,aimPose:false})],[pose({fist:true,aimPose:false})]]){
+  const hose=new HoseGestureController();hose.update([pose({aimPose:true})],0);hose.update([pose({aimPose:true})],150);
+  const state=hose.update(lost,160);assert.equal(state.active,false);assert.equal(state.blockWalking,false);assert.equal(state.pointerId,null);
+ }
+});
+
+test('UI and stale gaps revoke block and require fresh geometric dwell',()=>{
+ const hose=new HoseGestureController();hose.update([pose({aimPose:true})],0);hose.update([pose({aimPose:true})],150);
+ assert.equal(hose.update([pose({aimPose:true})],170,{overUi:true}).blockWalking,false);
+ assert.equal(hose.update([pose({aimPose:true})],180).active,false);
+ assert.equal(hose.update([pose({aimPose:true})],330).active,true);
+ assert.equal(hose.read(781).blockWalking,false);
+ assert.equal(hose.update([pose({aimPose:true})],781).active,false);
+ assert.equal(hose.update([pose({aimPose:true})],931).active,true);
 });
