@@ -25,7 +25,7 @@ const formatBytes=(bytes:number)=>bytes<1024?`${bytes} B`:bytes<1048576?`${Math.
 export function createInputRuntime({canvas,container,getHeading,onEvent}:Options){
  const walker=new TwoHandController();
  const oneHand=new OneHandController({staleMs:ONE_HAND_STALE_MS,pointDwellMs:350});
- const hose=new HoseGestureController({dwellMs:250,staleMs:STALE_MS});
+ const hose=new HoseGestureController({dwellMs:150,staleMs:450});
  const root=document.createElement('section');root.className='forest-input';root.setAttribute('aria-label','Forest Crew hand controls');
  root.innerHTML=`<div class="forest-input__status" role="status" aria-live="polite">Allow camera access, then show your hand.</div>
   <button class="forest-input__target forest-input__menu-open" data-action="menu" data-gesture aria-label="Pause and open controls">Pause</button>
@@ -33,8 +33,8 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
   <button class="forest-input__target forest-input__hud-open" data-action="hud-open" data-gesture aria-label="Open settings and recording details">Settings</button>
   <div class="forest-input__camera" aria-label="Mirrored hand tracking preview"><video playsinline muted aria-hidden="true"></video><canvas width="320" height="240" aria-hidden="true"></canvas><div class="forest-input__framing">Show both hands at chest height · 0/2 detected</div></div>
   <aside class="forest-input__hud" aria-label="Optional playtest and camera HUD" aria-hidden="true"><button class="forest-input__hud-close" data-action="hud-close" data-gesture>Hide settings</button><button class="forest-input__mode-action" data-action="input-mode" data-gesture>Use one-hand controls</button><div class="forest-input__record" aria-live="polite"><div data-kind="local">LOCAL · WAITING</div><div data-kind="remote">REVIEW COPY · OFF</div><div>Game + camera · no audio</div><button class="forest-input__record-action" data-action="record" data-gesture>Play without recording</button></div></aside>
-  <div class="forest-input__panel" role="dialog" aria-modal="true" aria-label="Pause and recording controls" hidden><h2>Controls</h2><p data-controls>Walk your fingers to move. Tilt both hands to turn. Point with one hand and hold the other palm open to spray.</p><div class="forest-input__choices"><button data-action="continue" data-gesture>Continue</button><button data-action="reset" data-gesture>Reset hands</button><button data-action="record" data-gesture>Play without recording</button><button data-action="export" data-gesture>Export latest playtest</button></div><p data-feedback></p></div>
-  <div class="forest-input__cursor is-lost" style="--dwell:0" aria-hidden="true"></div><div class="forest-input__aim is-idle" aria-label="Hose aim"></div>`;
+  <div class="forest-input__panel" role="dialog" aria-modal="true" aria-label="Pause and recording controls" hidden><h2>Controls</h2><p data-controls>Walk your fingers to move. Tilt both hands to turn. Point one index finger to aim and spray; your other hand can relax.</p><div class="forest-input__choices"><button data-action="continue" data-gesture>Continue</button><button data-action="reset" data-gesture>Reset hands</button><button data-action="record" data-gesture>Play without recording</button><button data-action="export" data-gesture>Export latest playtest</button></div><p data-feedback></p></div>
+  <div class="forest-input__cursor is-lost" style="--dwell:0" aria-hidden="true"></div><div class="forest-input__aim is-idle" aria-label="Hose aim"><span class="forest-input__aim-label"></span></div>`;
  container.append(root);
  const status=root.querySelector<HTMLElement>('.forest-input__status')!;
  const countdown=root.querySelector<HTMLElement>('.forest-input__countdown')!;
@@ -60,14 +60,15 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
  let stream:MediaStream|null=null,worker:Worker|null=null,workerReady=false,busy=false,disposed=false,started=false,recovering=false,suspended=false;
  let generation=0,restartAttempts=0,lastDispatch=0,lastResult=-Infinity,lastTelemetry=-Infinity,lastFlush=0,latency=0,inferenceAge=0,workerFrame=0,noHandsSince:number|null=null,zeroHandsWarned=false,lastReadiness='boot';
  let rawHands:RawHand[]=[],hands:any[]=[],baseMode:Mode='setup',calibrationSince:number|null=null;
- let inputMode:InputMode=preferredInputMode({coarsePointer:matchMedia('(pointer: coarse)').matches,maxTouchPoints:navigator.maxTouchPoints}) as InputMode;
+ const savedMode=localStorage.getItem('forest-crew-input-mode');
+ let inputMode:InputMode=savedMode==='one-hand'||savedMode==='two-hand'?savedMode:preferredInputMode({coarsePointer:matchMedia('(pointer: coarse)').matches,maxTouchPoints:navigator.maxTouchPoints}) as InputMode;
  let uiTarget:HTMLButtonElement|null=null,uiTargetSince=0,uiTargetFired=false,lastPointer={x:.5,y:.5},pointerTracked=false;
  let recordTimer=0,recordCountdownEnds=0,recordingError='',lastFrameState:InputFrame={active:false,forward:0,turn:0,headingTarget:null,gait:emptyGait(),mode:'setup',aim:{x:.5,y:.5},spraying:false};
 
  const qaMode=new URLSearchParams(location.search).get('qa')==='1';
  const criticalEvents=new Set(['complete','extinguish','gesture-select','calibrated','focus','reset','camera-error','tracker-error']);
- const emit=(type:string,data:any={})=>{const payload={version:'0.2.0',buildId:BUILD_ID,scenario:SCENARIO,fixture:qaMode,inputSource:qaInjected?'sampled-hand-fixture':'camera',...data};playtest.record(type,payload);const now=performance.now();if(playtest.state==='recording'&&(criticalEvents.has(type)||now-lastFlush>=1200)){lastFlush=now;void playtest.flushTelemetry();}onEvent?.(type,payload);};
- const recorder=new CompactRecorder({world:canvas,camera:video,session:()=>playtest.session,startedAt:()=>playtest.started,record:emit,uploadClip:(blob,startMs,endMs)=>playtest.uploadClip(blob,startMs,endMs),publicMode:true,captureWidth:480,captureHeight:270,captureFrameRate:5,videoBitsPerSecond:220000,overlay:()=>({phase:lastFrameState.mode,reason:inputMode==='one-hand'?oneHand.diagnostics(performance.now()).decision:lastFrameState.spraying?'spraying':lastFrameState.active?'moving':'idle',choice:uiTarget?.dataset.action||'',dwell:uiTarget?clamp((performance.now()-uiTargetSince)/900):0,cursorX:lastPointer.x,cursorY:lastPointer.y,cursorVisible:true,cursorTracked:pointerTracked}),onStatus:(state,detail)=>{if(state==='error'){recordingError=detail;recorder.setEnabled(false);playtest.fail(detail);}updateRecordingStatus(playtest);}});
+ const emit=(type:string,data:any={})=>{const payload={version:'0.2.1',buildId:BUILD_ID,scenario:SCENARIO,fixture:qaMode,inputSource:qaInjected?'sampled-hand-fixture':'camera',...data};playtest.record(type,payload);const now=performance.now();if(playtest.state==='recording'&&(criticalEvents.has(type)||now-lastFlush>=1200)){lastFlush=now;void playtest.flushTelemetry();}onEvent?.(type,payload);};
+ const recorder=new CompactRecorder({world:canvas,camera:video,session:()=>playtest.session,startedAt:()=>playtest.started,record:emit,uploadClip:(blob,startMs,endMs)=>playtest.uploadClip(blob,startMs,endMs),publicMode:true,captureWidth:480,captureHeight:270,captureFrameRate:5,videoBitsPerSecond:220000,overlay:()=>({phase:lastFrameState.mode,reason:lastFrameState.spraying?'spraying':inputMode==='one-hand'?oneHand.diagnostics(performance.now()).decision:lastFrameState.active?'moving':'idle',choice:uiTarget?.dataset.action||'',dwell:uiTarget?clamp((performance.now()-uiTargetSince)/900):0,cursorX:lastPointer.x,cursorY:lastPointer.y,cursorVisible:true,cursorTracked:pointerTracked}),onStatus:(state,detail)=>{if(state==='error'){recordingError=detail;recorder.setEnabled(false);playtest.fail(detail);}updateRecordingStatus(playtest);}});
 
  function updateRecordingStatus(snapshot:any){
   localLabel.textContent=snapshot.error||recordingError?'LOCAL · SAVE UNAVAILABLE':snapshot.state==='recording'?`LOCAL · SAVING ${formatBytes(snapshot.savedBytes||0)}`:snapshot.state==='starting'?'LOCAL · OPENING':snapshot.state==='stopped'?'LOCAL · SAVED':snapshot.state==='opted-out'?'LOCAL · OFF':'LOCAL · READY';
@@ -76,27 +77,27 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
   for(const button of recordButtons)button.textContent=['recording','starting','undecided'].includes(snapshot.state)?'Play without recording':'Record this playtest';
  }
  function setStatus(message:string){const hidden=!message;if(status.textContent===message&&status.hidden===hidden)return;status.textContent=message;status.hidden=hidden;}
- const staleLimit=()=>inputMode==='one-hand'?ONE_HAND_STALE_MS:STALE_MS;
+ const staleLimit=()=>450;
  const targetHands=()=>inputMode==='one-hand'?1:2;
  const setupInstruction=()=>inputMode==='one-hand'?'Hold your two walking fingers comfortably for 2 seconds.':'Hold both hands comfortably in view for 2 seconds.';
- function updateModeCopy(){root.dataset.inputMode=inputMode;modeButton.textContent=inputMode==='one-hand'?'Use two-hand controls':'Use one-hand controls';controlsCopy.textContent=inputMode==='one-hand'?'Walk your two fingers to move. Point them left or right to turn; the arrow shows your turn. Stop stepping to stop walking. Thumb out while stepping reverses; tuck it to go forward. Open palm stops and resets straight ahead. Point one finger and hold to spray.':'Walk your fingers to move. Tilt both hands to turn. Point with one hand and hold the other palm open to spray.';}
+ function updateModeCopy(){root.dataset.inputMode=inputMode;modeButton.textContent=inputMode==='one-hand'?'Use two-hand controls':'Use one-hand controls';controlsCopy.textContent=inputMode==='one-hand'?'Walk your two fingers to move. Point them left or right to turn; the arrow shows your turn. Stop stepping to stop walking. Thumb out while stepping reverses; tuck it to go forward. Open palm stops and resets straight ahead. Point one index finger to aim and spray; your other hand can relax.':'Walk your fingers to move. Tilt both hands to turn. Point one index finger to aim and spray; your other hand can relax.';}
  function updateFraming(show:boolean,count=rawHands.length){root.classList.toggle('is-framing',show);framing.textContent=framingPrompt(count,targetHands());}
  function drawHands(value:RawHand[]){
-  const state=oneHand.diagnostics(performance.now());
-  drawHandFeedback(overlayContext,value,{single:inputMode==='one-hand',decision:state.decision,fresh:performance.now()-lastResult<=staleLimit()&&hands.length>0,turn:state.turn,reverse:state.reverse});
+  const state=oneHand.diagnostics(performance.now()),hoseState=hose.read(performance.now());
+  drawHandFeedback(overlayContext,value,{single:inputMode==='one-hand',decision:hoseState.active?'spraying':hoseState.dwell>0?'point-dwell':state.decision,fresh:performance.now()-lastResult<=staleLimit()&&hands.length>0,turn:state.turn,reverse:state.reverse});
  }
  function clearUiAuthority(){uiTarget=null;uiTargetSince=0;uiTargetFired=false;root.querySelectorAll('.forest-input__hover').forEach(node=>node.classList.remove('forest-input__hover'));cursor.style.setProperty('--dwell','0');}
  function setHud(open:boolean){hud.classList.toggle('is-open',open);hud.setAttribute('aria-hidden',String(!open));hudOpen.hidden=open;clearUiAuthority();emit('hud',{open});}
- function pointerHand(){return hands.find(hand=>hand.pointing===true&&Number.isFinite(hand.pointX)&&Number.isFinite(hand.pointY));}
+ function pointerHand(){const candidates=hands.filter(hand=>hand.pointing===true&&Number.isFinite(hand.pointX)&&Number.isFinite(hand.pointY));const reference={x:.85-lastPointer.x*.7,y:.12+lastPointer.y*.7};return candidates.reduce((best,hand)=>!best||Math.hypot(hand.pointX-reference.x,hand.pointY-reference.y)<Math.hypot(best.pointX-reference.x,best.pointY-reference.y)?hand:best,null);}
  function updatePointer(now:number){
-  const point=pointerHand();pointerTracked=Boolean(point)&&now-lastResult<=STALE_MS;
+  const point=pointerHand();pointerTracked=Boolean(point)&&now-lastResult<=staleLimit();
   // Expand the comfortable center camera area across the viewport so edge
   // controls remain reachable without forcing a player's arm out of frame.
   if(point){lastPointer={x:clamp((1-point.pointX-.15)/.7),y:clamp((point.pointY-.12)/.7)};}
   cursor.style.left=`${lastPointer.x*innerWidth}px`;cursor.style.top=`${lastPointer.y*innerHeight}px`;cursor.classList.toggle('is-lost',!pointerTracked);
   const hit=pointerTracked?document.elementFromPoint(lastPointer.x*innerWidth,lastPointer.y*innerHeight)?.closest<HTMLButtonElement>('[data-gesture]'):null;
   const next=hit&&root.contains(hit)&&!hit.disabled?hit:null;
-  if(next!==uiTarget||now-lastResult>STALE_MS){clearUiAuthority();uiTarget=next;if(next)uiTargetSince=now;}
+  if(next!==uiTarget||now-lastResult>staleLimit()){clearUiAuthority();uiTarget=next;if(next)uiTargetSince=now;}
   if(!uiTarget)return false;
   uiTarget.classList.add('forest-input__hover');const progress=clamp((now-uiTargetSince)/900);cursor.style.setProperty('--dwell',String(progress));
   if(progress===1&&!uiTargetFired){uiTargetFired=true;emit('gesture-select',{action:uiTarget.dataset.action});uiTarget.click();}
@@ -106,7 +107,7 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
  function openMenu(source:string){baseMode='menu';panel.hidden=false;resetControllers();clearUiAuthority();emit('menu-open',{source});setStatus('');}
  function continuePlay(){panel.hidden=true;baseMode='setup';calibrationSince=null;updateFraming(workerReady,0);resetControllers();clearUiAuthority();emit('continue');setStatus(setupInstruction());}
  function resetCalibration(){panel.hidden=true;baseMode='setup';calibrationSince=null;updateFraming(workerReady,0);resetControllers();clearUiAuthority();emit('reset');setStatus(setupInstruction());}
- function toggleInputMode(){inputMode=inputMode==='one-hand'?'two-hand':'one-hand';updateModeCopy();setHud(false);panel.hidden=true;baseMode='setup';calibrationSince=null;resetControllers();updateFraming(workerReady,0);setStatus(setupInstruction());emit('input-mode',{inputMode,source:'settings'});}
+ function toggleInputMode(){inputMode=inputMode==='one-hand'?'two-hand':'one-hand';localStorage.setItem('forest-crew-input-mode',inputMode);updateModeCopy();setHud(false);panel.hidden=true;baseMode='setup';calibrationSince=null;resetControllers();updateFraming(workerReady,0);setStatus(setupInstruction());emit('input-mode',{inputMode,source:'settings'});}
  async function stopRecording(remember=true){
   window.clearInterval(recordTimer);recordTimer=0;countdown.textContent='REC off';if(remember)localStorage.setItem('forest-crew-recording','off');
   if(['undecided','starting'].includes(playtest.state))playtest.optOut();else{recorder.setEnabled(false);await recorder.stopAndFlush('user-opt-out');await playtest.stop();}
@@ -130,11 +131,12 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
  function ingest(sampled:any[],landmarks:RawHand[],now:number,sampleLatency=0){
   if(!Number.isFinite(now))return;lastResult=now;latency=sampleLatency;hands=Array.isArray(sampled)?sampled.filter(hand=>hand&&hand.id!==undefined&&['indexFlex','middleFlex','roll'].every(key=>Number.isFinite(hand[key]))):[];rawHands=Array.isArray(landmarks)?landmarks:[];if(baseMode==='setup')updateFraming(true,rawHands.length);if(rawHands.length){noHandsSince=null;zeroHandsWarned=false;}else{noHandsSince??=now;if(!zeroHandsWarned&&now-noHandsSince>=2000){zeroHandsWarned=true;emit('recognition-empty',{durationMs:Math.round(now-noHandsSince),videoWidth:video.videoWidth,videoHeight:video.videoHeight,videoTime:+video.currentTime.toFixed(3),readyState:video.readyState});}}
   if(baseMode==='setup'){
-   if(hands.length===targetHands()){calibrationSince??=now;const remaining=Math.max(0,2000-(now-calibrationSince));setStatus(remaining?`${inputMode==='one-hand'?'Hand':'Both hands'} ready · starting in ${Math.ceil(remaining/1000)}…`:'Calibrated · walk your fingers.');if(!remaining){if(inputMode==='one-hand')oneHand.calibrate(hands,now);else walker.calibrate(hands,now,getHeading());baseMode='walk';suspended=false;updateFraming(false);emit('calibrated',{hands:targetHands(),inputMode});}}
+   if(inputMode==='one-hand'?hands.length>=1:hands.length===2){calibrationSince??=now;const remaining=Math.max(0,2000-(now-calibrationSince));setStatus(remaining?`${inputMode==='one-hand'?'Hand':'Both hands'} ready · starting in ${Math.ceil(remaining/1000)}…`:'Calibrated · walk your fingers.');if(!remaining){if(inputMode==='one-hand')oneHand.calibrate(hands,now);else walker.calibrate(hands,now,getHeading());baseMode='walk';suspended=false;updateFraming(false);emit('calibrated',{hands:targetHands(),inputMode});}}
    else{calibrationSince=null;setStatus(inputMode==='two-hand'&&hands.length===1?'Bring your other hand into view.':noHandsSince!==null&&now-noHandsSince>=2000?`Show ${inputMode==='one-hand'?'one hand':'both hands'} below your face.`:setupInstruction());}
   }
-  const overUi=updatePointer(now);if(inputMode==='one-hand'){if(baseMode==='walk')oneHand.update(hands,now,{overUi});}else{const hoseState=hose.update(hands,now,{overUi});if(baseMode==='walk'&&!hoseState.active)walker.update(hands,now);else if(hoseState.active)walker.reset();}
-  drawHands(rawHands);const singleState=inputMode==='one-hand'?oneHand.read(now,{overUi}):null,hoseTelemetry=inputMode==='two-hand'?hose.read(now,{overUi}):null;emit('hands',{timestamp:Math.round(now),latency,mode:baseMode,inputMode,control:inputMode==='one-hand'?oneHand.diagnostics(now):null,stance:singleState?.mode??(hoseTelemetry?.active?'hose':'walk'),aim:singleState?.aim??hoseTelemetry?.aim,landmarks:rawHands});
+  const overUi=updatePointer(now),hoseState=hose.update(hands,now,{overUi});
+  if(baseMode==='walk'){if(inputMode==='one-hand')oneHand.update(hands,now,{overUi:overUi||hoseState.active});else if(!hoseState.active)walker.update(hands,now);else walker.reset();}
+  drawHands(rawHands);const hoseTelemetry=hose.read(now,{overUi});emit('hands',{timestamp:Math.round(now),latency,mode:baseMode,inputMode,control:inputMode==='one-hand'?oneHand.diagnostics(now):null,stance:hoseTelemetry.active?'hose':'walk',aim:hoseTelemetry.aim,landmarks:rawHands});
  }
  function onWorkerMessage({data}:MessageEvent){
   if(disposed)return;if(data.type==='ready'){workerReady=true;return;}if(data.type==='error'){const wasReady=workerReady;busy=false;workerReady=false;emit('tracker-error',{message:data.message});if(wasReady&&restartAttempts<1)void recoverTracker('worker-error');else if(wasReady)setStatus('Hand tracking stopped. Reload to retry.');return;}if(data.type!=='result')return;if(qaInjected){busy=false;return;}
@@ -166,7 +168,7 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
   if(!qaInjected&&now-lastDispatch>=33&&shouldDispatchFrame({hidden:document.hidden,workerReady,cameraReady,busy})){lastDispatch=now;busy=true;createImageBitmap(video).then(bitmap=>{if(disposed||!worker){bitmap.close();busy=false;return;}worker.postMessage({type:'frame',bitmap,time:now},[bitmap]);}).catch(error=>{busy=false;resetControllers();emit('frame-error',{message:String(error)});});}
   if(busy&&now-lastDispatch>2500){if(restartAttempts<1)void recoverTracker('frame-timeout');else{busy=false;workerReady=false;worker?.terminate();worker=null;setStatus('Hand tracking stopped. Reload to retry.');emit('tracker-stopped',{reason:'repeated-frame-timeout'});}}
   const stale=now-lastResult>staleLimit()||hands.length===0||!visible||suspended;if(stale){walker.reset();oneHand.read(now);hose.read(now);drawHands(rawHands);pointerTracked=false;cursor.classList.add('is-lost');clearUiAuthority();}
-  const overUi=Boolean(uiTarget),single=oneHand.read(now,{overUi}),hoseState=hose.read(now,{overUi}),walking=inputMode==='one-hand'?single:walker.read(now),hoseActive=inputMode==='one-hand'?single.mode==='hose':hoseState.active,hoseAim=inputMode==='one-hand'?single.aim:hoseState.aim,hoseSpraying=inputMode==='one-hand'?single.spraying:hoseState.spraying;const mode:Mode=baseMode==='menu'?'menu':baseMode==='setup'?'setup':stale?'lost':hoseActive?'hose':'walk';const active=mode==='walk'||mode==='hose';
+  const overUi=Boolean(uiTarget),single=oneHand.read(now,{overUi}),hoseState=hose.read(now,{overUi}),walking=inputMode==='one-hand'?single:walker.read(now),hoseActive=hoseState.active,hoseAim=hoseState.aim,hoseSpraying=hoseState.spraying;const mode:Mode=baseMode==='menu'?'menu':baseMode==='setup'?'setup':stale?'lost':hoseActive?'hose':'walk';const active=mode==='walk'||mode==='hose';
   const result:InputFrame={active:active&&visible&&!suspended,forward:mode==='walk'&&visible&&!suspended?walking.forward:0,turn:mode==='walk'&&visible&&!suspended?walking.turn:0,headingTarget:mode==='walk'&&visible&&!suspended?walking.headingTarget:null,gait:mode==='walk'&&visible&&!suspended?walking.gait:emptyGait(),mode,aim:hoseAim as {x:number;y:number},spraying:mode==='hose'&&visible&&!suspended&&hoseSpraying===true};
   aimNode.style.left=`${result.aim.x*innerWidth}px`;aimNode.style.top=`${result.aim.y*innerHeight}px`;aimNode.classList.toggle('is-idle',mode!=='hose');
   if(mode==='hose'||mode==='walk'||mode==='menu')setStatus('');else if(mode==='lost'&&baseMode==='walk')setStatus(`${inputMode==='one-hand'?'Hand':'Hands'} lost · bring ${inputMode==='one-hand'?'it':'them'} back into view.`);
@@ -183,5 +185,5 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
   (window as any).__forestInputQA={injectHands(sampled:any[],landmarks:RawHand[]=sampled.flatMap(hand=>Array.isArray(hand.landmarks)?[{id:String(hand.id),landmarks:hand.landmarks}]:[]),now=performance.now()){qaInjected=true;ingest(sampled,landmarks,now,0);return frame(now);},releaseInjection(){qaInjected=false;hands=[];lastResult=-Infinity;resetControllers();},diagnostics};
  }
  updateModeCopy();updateRecordingStatus(playtest);
- return {start,frame,record,reset,dispose,diagnostics};
+ return {start,frame,record,reset,dispose,diagnostics,setHoseFeedback:(text:string)=>{if(aimNode.dataset.feedback!==text){aimNode.dataset.feedback=text;aimNode.querySelector('span')!.textContent=text;}}};
 }

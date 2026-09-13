@@ -12,3 +12,5 @@
 .forest-input.is-framing .forest-input__hud:not(.is-open){opacity:0;pointer-events:none}
 .forest-input .forest-input__hud.is-open{max-height:calc(100dvh - 90px);overflow:hidden}
 @media(max-height:520px) and (orientation:landscape){.forest-input>.forest-input__camera{width:136px;height:102px}.forest-input .forest-input__hud.is-open{display:flex;flex-direction:column;width:300px;gap:6px}.forest-input .forest-input__hud.is-open .forest-input__record{display:grid;grid-template-columns:1fr 1fr}}
+
+.forest-input__aim-label{position:absolute;top:calc(100% + 10px);left:50%;transform:translateX(-50%);width:180px;text-align:center;font:600 11px/1.4 system-ui;color:#fff6d1;text-shadow:0 1px 5px #162920;pointer-events:none}

@@ -108,7 +108,7 @@ try {
   check('sampled-hands-hose-switch', hoseFrame.input.mode === 'hose' && hoseFrame.input.spraying === true && hoseFrame.tool?.ready === true, { input: hoseFrame.input, tool: hoseFrame.tool }, 'continuous-sampled-hands');
   await page.screenshot({ path: path.join(screenshots, 'gameplay-hose.png') });
 
-  await wait(350);
+  await wait(550);
   const stale = await page.evaluate(() => window.__forestQA.snapshot());
   check('sampled-hands-stale-stop', stale.input.mode === 'lost' && stale.input.active === false && stale.speed < .02, { input: stale.input, speed: stale.speed }, 'continuous-sampled-hands');
 

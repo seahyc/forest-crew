@@ -1,0 +1,32 @@
+import {chromium} from 'playwright';
+
+const base=process.env.FOREST_PLAYTEST_URL||'http://127.0.0.1:4180/';
+const browser=await chromium.launch({headless:true,channel:'chrome',args:['--use-angle=metal','--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']});
+const checks=[],errors=[];
+const check=(name,pass,evidence)=>checks.push({name,pass:Boolean(pass),evidence});
+try{
+ const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});page.on('pageerror',e=>errors.push(String(e)));
+ await page.addInitScript(()=>{localStorage.setItem('forest-crew-recording','off');if(!localStorage.getItem('forest-crew-input-mode'))localStorage.setItem('forest-crew-input-mode','one-hand');});
+ await page.goto(new URL('?qa=1',base).href);await page.waitForFunction(()=>window.__forestQA?.ready()&&window.__forestInputQA?.diagnostics().workerReady,null,{timeout:60000});await page.locator('#loading').waitFor({state:'hidden'});
+ await page.evaluate(()=>{document.querySelector('.forest-input__camera video').srcObject=null;window.h=(id,x=.3,y=.5,o={})=>({id,indexFlex:.2,middleFlex:.2,roll:0,pointX:x,pointY:y,navX:x,navY:y,wristX:x,wristY:y,palmScale:1,open:false,fist:false,pointing:false,...o});window.fixtureTime=performance.now();window.put=(hands,elapsed=0)=>{window.fixtureTime+=elapsed;return window.__forestInputQA.injectHands(hands,[],window.fixtureTime);};});
+ const one=await page.evaluate(()=>{const owner=h('owner',.35,.5),extra=h('extra',.78,.55);put([owner,extra]);put([extra,owner],2000);return __forestInputQA.diagnostics();});
+ check('one-hand-calibrates-with-extra-hand',one.inputMode==='one-hand'&&one.mode==='walk',one);
+ const walk=await page.evaluate(()=>{const frames=[];for(let i=0;i<18;i++){const d=i%2?.12:-.12,owner=h('owner',.35,.5,{indexFlex:.2+d,middleFlex:.2-d}),extra=h('extra',.78,.55);frames.push(put(i%2?[extra,owner]:[owner],60));}return frames;});
+ check('walk-owner-survives-extra-hand-and-reorder',Math.max(...walk.map(x=>x.forward))>.05&&!walk.some(x=>x.spraying),walk.at(-1));
+ const hose=await page.evaluate(()=>{const a=put([h('Left',.3,.5,{pointing:true})],60),b=put([h('other',.8,.3),h('Left',.31,.5,{pointing:true})],150),c=put([h('Right',.32,.5,{pointing:true}),h('Left',.8,.3)],50);return {a,b,c};});
+ check('universal-hose-holds-across-count-order-and-label-swap',!hose.a.spraying&&hose.b.spraying&&hose.c.spraying,hose);
+ const gaps=await page.evaluate(()=>{const held=put([h('Right',.32,.5,{pointing:true})],300),expired=put([h('Right',.32,.5,{pointing:true})],451),redwell=put([h('Right',.32,.5,{pointing:true})],150);return {held,expired,redwell};});
+ check('300ms-gap-holds-and-over-450ms-requires-dwell',gaps.held.spraying&&!gaps.expired.spraying&&gaps.redwell.spraying,gaps);
+ const live=await page.evaluate(()=>{__forestInputQA.releaseInjection();fixtureTime=performance.now();put([h('live',.3,.5,{pointing:true})]);return true;});await page.waitForTimeout(160);await page.evaluate(()=>{fixtureTime=performance.now();put([h('live',.3,.5,{pointing:true})]);});await page.waitForTimeout(300);const liveHeld=await page.evaluate(()=>__forestQA.snapshot().input);await page.waitForTimeout(200);const liveStopped=await page.evaluate(()=>__forestQA.snapshot().input);
+ check('render-loop-freshness-holds-300ms-and-stops-by-500ms',live&&liveHeld.spraying&&!liveStopped.spraying,{held:liveHeld,stopped:liveStopped});
+ const stops=await page.evaluate(()=>{fixtureTime=performance.now();put([h('p',.3,.5,{fist:true})]);put([h('p',.3,.5,{pointing:true})],10);put([h('p',.3,.5,{pointing:true})],150);const fist=put([h('p',.3,.5,{fist:true})],10);put([h('p',.3,.5,{pointing:true})],10);put([h('p',.3,.5,{pointing:true})],150);const empty=put([],10);return {fist,empty};});
+ check('explicit-fist-and-empty-stop-immediately',!stops.fist.spraying&&!stops.empty.spraying,stops);
+ await page.click('[data-action="hud-open"]');const box=await page.locator('[data-action="hud-close"]').boundingBox(),vp=page.viewportSize();
+ const ui=await page.evaluate(({box,vp})=>{const x=.85-.7*(box.x+box.width/2)/vp.width,y=.12+.7*(box.y+box.height/2)/vp.height;return [put([h('ui',x,y,{pointing:true})],10),put([h('ui',x,y,{pointing:true})],200)];},{box,vp});
+ check('UI-target-suppresses-spray',ui.every(x=>!x.spraying),ui);
+ await page.evaluate(()=>localStorage.setItem('forest-crew-input-mode','two-hand'));await page.reload();await page.waitForFunction(()=>window.__forestQA?.ready()&&window.__forestInputQA?.diagnostics().workerReady,null,{timeout:60000});
+ await page.evaluate(()=>{document.querySelector('.forest-input__camera video').srcObject=null;window.h=(id,x=.3,y=.5,o={})=>({id,indexFlex:.2,middleFlex:.2,roll:0,pointX:x,pointY:y,navX:x,navY:y,wristX:x,wristY:y,palmScale:1,open:false,fist:false,pointing:false,...o});window.fixtureTime=performance.now();window.put=(hands,elapsed=0)=>{window.fixtureTime+=elapsed;return window.__forestInputQA.injectHands(hands,[],window.fixtureTime);};});
+ const desktop=await page.evaluate(()=>{put([h('l',.3),h('r',.7)]);put([h('r',.7),h('l',.3)],2000);const calibrated=__forestInputQA.diagnostics(),first=put([h('l',.3,.5,{pointing:true})],100),spray=put([h('l',.3,.5,{pointing:true})],150);return {calibrated,first,spray};});
+ check('two-hand-mode-persists-and-single-point-sprays',desktop.calibrated.inputMode==='two-hand'&&desktop.calibrated.mode==='walk'&&!desktop.first.spraying&&desktop.spray.spraying,desktop);
+ const report={scope:'Playwright runtime fixtures through __forestInputQA; no recording, model calls, or real-hand usability claim.',checks,errors,pass:checks.every(x=>x.pass)&&!errors.length};console.log(JSON.stringify(report,null,2));if(!report.pass)process.exitCode=1;
+}finally{await browser.close();}

@@ -71,6 +71,7 @@ function renderFrame(){
  crewVisuals?.update(dt,crew?.snapshot());
  const pressure=crew?crew.pressure():1;
  const spraying=frame.spraying&&!sceneReview&&pressure>0;
+ input.setHoseFeedback(frame.mode!=='hose'?'':pressure<=0?'Waiting for water pressure':!impact?'Aim lower or walk closer':'');
  const fireState=fire.update(dt,{active:frame.active&&!sceneReview,spraying,impact:impact?{x:impact.x,z:impact.z}:null,pressure});
  let heat=playerHeat.update(dt,{position:state.position,patches:fireState.patches,active:frame.active&&!sceneReview});
  if(heat.needsRescue){movement.reset();playerHeat.reset();rescueUntil=now+3500;input.record('rescued',{reason:'fire-contact',fireProgress:fireState.progress});}
