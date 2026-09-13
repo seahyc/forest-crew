@@ -139,3 +139,14 @@ test('a failed frame request drops previously fresh pressure immediately',async(
   assert.equal(f.notices[0].textContent,'AI CREW · connection lost, water paused');
  }finally{f.restore();}
 });
+
+test('server-confirmed waiting roster is visible without starting models or claiming progress',async()=>{
+ const calls=[],roster=[{id:'firefighter',activity:'waiting',position:{x:-1.8,y:0,z:-2},yaw:0}];
+ const f=await fixture(async url=>{calls.push(url);return json({ready:true,localOnly:true,roster});});
+ try{const client=f.createCrewClient();await f.settle();assert.equal(client.snapshot(),null);assert.deepEqual(client.visualSnapshot(),{status:'waiting-for-hands',preview:true,pressure:0,actors:roster});assert.equal(client.pressure(),0);assert.equal(client.telemetry(),null);assert.deepEqual(calls,['/api/test/status']);}finally{f.restore();}
+});
+
+test('a warming local bridge becomes ready without a page reload',async()=>{
+ let reads=0;const f=await fixture(async()=>json({ready:++reads>1,localOnly:true,roster:[]}));
+ try{const client=f.createCrewClient();await f.settle();assert.equal(f.notices[0].textContent,'CREW · waking up the crew bridge…');await new Promise(r=>setTimeout(r,1100));await f.settle();assert.equal(reads,2);assert.equal(f.notices[0].textContent,'CREW · waiting for your hands');assert.equal(client.snapshot(),null);client.dispose();}finally{f.restore();}
+});

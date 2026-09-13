@@ -12,15 +12,13 @@ Authenticate the CLI with your own ChatGPT account, then run:
 
 ```sh
 npm ci
-npm run crew:server
-# In a second terminal
-npm run dev
+npm run dev # starts the browser and local crew bridge together
 ```
 
-Open `http://127.0.0.1:4180/?crew=1`. In local mode the bridge binds only to
+Open `http://127.0.0.1:4180/`. In local mode the bridge binds only to
 `127.0.0.1:4182`, accepts the existing local origins, and does not require an
 invite. Do not tunnel this mode or expose a personal Codex account to visitors.
-Opening Grove 01 without crew mode makes no game model calls.
+The local root URL enables the crew. Add `?crew=0` for the solo baseline. The server-confirmed waiting roster is visible before hands activate play; it does not spend model quota.
 
 ## Hosted invitation demo
 

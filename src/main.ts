@@ -21,8 +21,9 @@ const movement=createLocomotion(env.scene,env.camera,env.colliders,env.spawn,env
 let input:ReturnType<typeof createInputRuntime>;
 const fire=createFireSimulation({onEvent:(type:string,data:any)=>input?.record(type,data)} as any);
 const effects=createFireEffects(env.scene);
-const crew=(params.get('crew')==='1'||import.meta.env.VITE_CREW_DEFAULT==='1')&&!sceneReview?createCrewClient({invite:crewInvite}):null;
+const crew=params.get('crew')!=='0'&&(params.get('crew')==='1'||import.meta.env.VITE_CREW_DEFAULT==='1')&&!sceneReview?createCrewClient({invite:crewInvite}):null;
 crewInvite=null;
+if(crew){document.title='Forest Crew · AI crew';const chapter=document.querySelector('.chapter');if(chapter)chapter.textContent='AI crew';}
 let crewVisuals:Awaited<ReturnType<typeof import('./crew-visuals').createCrewVisuals>>|null=null;
 if(crew)void import('./crew-visuals').then(async({createCrewVisuals})=>{crewVisuals=createCrewVisuals(env.scene,env.shadows);await crewVisuals.ready;}).catch(()=>console.error('Crew visuals unavailable'));
 const playerHeat=createPlayerHeat({onEvent:(type:string,data:any)=>input?.record(type,data)});
@@ -71,7 +72,7 @@ function renderFrame(){
  const origin=Vector3.TransformCoordinates(new Vector3(HOSE_ANCHOR.x,HOSE_ANCHOR.y,HOSE_ANCHOR.z+.22),movement.player.getWorldMatrix());
  let impact=qaOverride?.impact?new Vector3(qaOverride.impact.x,.03,qaOverride.impact.z):impactAt(frame.aim,origin);
  crew?.update(now,{active:frame.active&&!sceneReview,spraying:frame.spraying,progress:fire.snapshot().progress,complete:fire.snapshot().complete});
- crewVisuals?.update(dt,crew?.snapshot());
+ crewVisuals?.update(dt,crew?.visualSnapshot());
  const pressure=crew?crew.pressure():1;
  const spraying=frame.spraying&&!sceneReview&&pressure>0;
  input.setHoseFeedback(frame.mode!=='hose'?'':pressure<=0?'Waiting for water pressure':!impact?'Aim lower or walk closer':'');
@@ -97,7 +98,7 @@ function syncRendering(){
 }
 document.addEventListener('visibilitychange',syncRendering);
 syncRendering();
-void Promise.all([movement.ready,env.assetsReady]).then(async()=>{finishAstronaut(movement.player.getChildMeshes());for(const mat of env.scene.materials){if(mat instanceof PBRMaterial&&(mat.name==='white'||mat.name.startsWith('firefighter-turnout'))){sootMaterials.push({material:mat,color:mat.albedoColor.clone()});}}for(const mesh of movement.player.getChildMeshes()){mesh.receiveShadows=true;env.shadows.addShadowCaster(mesh);}ready=true;await env.scene.whenReadyAsync();$('loading').hidden=true;if(sceneReview)env.setEstablishingView();else await input.start();}).catch(error=>{$('loading').hidden=false;$('load-message').textContent=`Could not start: ${String(error)}`;console.error(error);});
+void Promise.all([movement.ready,env.assetsReady]).then(async()=>{finishAstronaut(movement.player.getChildMeshes());for(const mat of env.scene.materials){if(mat instanceof PBRMaterial&&(mat.name==='white'||mat.name.startsWith('firefighter-turnout'))){sootMaterials.push({material:mat,color:mat.albedoColor.clone()});}}for(const mesh of movement.player.getChildMeshes()){mesh.receiveShadows=true;env.shadows.addShadowCaster(mesh);}ready=true;await env.scene.whenReadyAsync();$('loading').hidden=true;if(sceneReview)env.setEstablishingView();else await input.start().catch(()=>{/* Input reports camera setup errors; keep the world and waiting crew visible. */});}).catch(error=>{$('loading').hidden=false;$('load-message').textContent=`Could not start: ${String(error)}`;console.error(error);});
 window.addEventListener('resize',()=>env.resize());
 window.addEventListener('pagehide',()=>{disposed=true;document.removeEventListener('visibilitychange',syncRendering);env.engine.stopRenderLoop(renderFrame);crew?.dispose();crewVisuals?.dispose();input.dispose();effects.dispose();movement.dispose();env.dispose();});
 if(qa){(window as any).__forestQA={ready:()=>ready,snapshot:()=>latestState,avatar:()=>movement.avatar.modelStatus(),input:()=>input.diagnostics(),reset,override:(value:any)=>{qaOverride=value;},clear:()=>{qaOverride=null;},aimFor:(x:number,z:number)=>{const point=Vector3.Project(new Vector3(x,.03,z),Matrix.Identity(),env.scene.getTransformMatrix(),env.camera.viewport.toGlobal(env.engine.getRenderWidth(),env.engine.getRenderHeight()));return {x:point.x/env.engine.getRenderWidth(),y:point.y/env.engine.getRenderHeight()};},scene:env.scene,renderSize:()=>({width:env.engine.getRenderWidth(),height:env.engine.getRenderHeight()})};}

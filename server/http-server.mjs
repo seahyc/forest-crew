@@ -1,5 +1,5 @@
 import {randomBytes} from 'node:crypto';
-import {GAME_OXYGEN_COST} from './crew-session.mjs';
+import {GAME_OXYGEN_COST,createCrewRoster} from './crew-session.mjs';
 import {parseCookie,safeEqual} from './hosted-access.mjs';
 
 const reply=(res,status,value,headers={})=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers});res.end(JSON.stringify(value));};
@@ -18,8 +18,8 @@ export function createCrewHttpHandler({port,bind,config,access,getProviderState,
    const authenticated=config.hosted?access.authenticated(req.headers.cookie):true;
    if(req.method==='GET'&&req.url==='/api/crew/status'){
     const {providerReady,models}=getProviderState();
-    if(!config.hosted){reply(res,200,{ready:providerReady,models,localOnly:true});return;}
-    reply(res,200,{ready:providerReady,models,localOnly:false,authenticated,busy:occupied(),sessionLimit:await access.admissions.status()});return;
+    if(!config.hosted){reply(res,200,{ready:providerReady,models,localOnly:true,roster:providerReady?createCrewRoster():[]});return;}
+    reply(res,200,{ready:providerReady,models,localOnly:false,authenticated,roster:providerReady&&authenticated?createCrewRoster():[],busy:occupied(),sessionLimit:await access.admissions.status()});return;
    }
    if(req.method!=='POST'||!origins.has(req.headers.origin)||req.headers['x-forest-crew']!=='1'||!req.headers['content-type']?.startsWith('application/json')){reply(res,403,{error:'same_origin_required'});return;}
    const data=await body(req);

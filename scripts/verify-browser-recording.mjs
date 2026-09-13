@@ -1,6 +1,6 @@
 import {chromium} from 'playwright';
 import {writeFile} from 'node:fs/promises';
-const targetUrl=new URL(process.env.FOREST_PLAYTEST_URL||'http://127.0.0.1:4180/');targetUrl.searchParams.set('qa','1');
+const targetUrl=new URL(process.env.FOREST_PLAYTEST_URL||'http://127.0.0.1:4180/');targetUrl.searchParams.set('qa','1');if(!targetUrl.searchParams.has('crew'))targetUrl.searchParams.set('crew','0');
 const expectMirror=process.env.FOREST_EXPECT_MIRROR==='1';
 const browser=await chromium.launch({headless:true,channel:'chrome',args:['--use-angle=metal','--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']});
 const phone=process.env.FOREST_PHONE==='1';

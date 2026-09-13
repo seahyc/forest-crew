@@ -8,6 +8,7 @@ const screenshots = path.join(out, 'screenshots');
 const logs = path.join(out, 'logs');
 const targetUrl = new URL(process.env.FOREST_PLAYTEST_URL || 'http://127.0.0.1:4180/');
 targetUrl.searchParams.set('qa', '1');
+if(!targetUrl.searchParams.has('crew'))targetUrl.searchParams.set('crew','0');
 const expectMirror = process.env.FOREST_EXPECT_MIRROR === '1';
 await mkdir(screenshots, { recursive: true });
 await mkdir(logs, { recursive: true });

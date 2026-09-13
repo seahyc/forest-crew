@@ -17,11 +17,11 @@ npm ci
 npm run dev
 ```
 
-Open <http://127.0.0.1:4180/>. Allow camera access when the browser asks. Browsers permit camera access on `localhost`/loopback and secure HTTPS pages; use HTTPS if you serve the game from another hostname or device.
+`npm run dev` starts the browser app and local crew bridge together. Open <http://127.0.0.1:4180/> for AI Crew, or add `?crew=0` for the solo gesture baseline. Allow camera access when the browser asks. Browsers permit camera access on `localhost`/loopback and secure HTTPS pages; use HTTPS if you serve the game from another hostname or device.
 
 Grove 01 runs without model-provider credentials. Camera tracking runs in the browser. Recording starts automatically with a visible opt-out and a bounded local buffer; the owner’s published build also uploads to the optional private review archive. No camera imagery is sent to the AI crew.
 
-For the **local AI crew preview**, run `npm run crew:server` in another terminal and open `http://127.0.0.1:4180/?crew=1`. Two real model actors prepare and maintain your water supply. See [the crew setup and limits](server/README.md). This crew mode is not enabled on the public Grove 01 route.
+The **local AI crew** is enabled by default. The server confirms the waiting roster before the firefighters appear; model calls start only when your hands activate play. Sign into the Codex CLI with your own account first. Two real model actors prepare and maintain your water supply. See [the crew setup and limits](server/README.md). This crew mode is not enabled on the public Grove 01 route.
 
 Useful checks:
 

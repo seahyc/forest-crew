@@ -10,7 +10,9 @@ export function renderQuality({width,height,dpr=1,mobile=false,maxSamples=1,tier
  const pixelRatio=Math.max(1,Math.min(requested,Math.sqrt(budget/cssPixels)));
  const samples=!mobile&&maxSamples>=2?2:1;
  return {pixelRatio,hardwareScaling:1/pixelRatio,samples,fxaa:samples===1,
-  reflectionSize:mobile?768:1024,ambientOcclusion:!mobile,
+  // Screen-space AO introduced stippling and false creases on the rig and deck.
+  // Use the real sun/contact shadows while retaining the native render buffer.
+  reflectionSize:mobile?768:1024,ambientOcclusion:false,
   tier,reflectionRefreshRate:2,bloomEnabled:true,maxFPS:mobile?30:60};
 }
 

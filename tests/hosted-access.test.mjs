@@ -96,3 +96,11 @@ test('concurrent admissions preserve the single active session guard',async t=>{
  const status=await app.request('/api/crew/status',{cookie:accessCookie});
  assert.equal(status.body.sessionLimit.used,1);
 });
+
+test('waiting roster requires hosted access and never admits or starts a model session',async t=>{
+ const f=await fixture(t);
+ const publicStatus=await f.request('/api/crew/status');assert.deepEqual(publicStatus.body.roster,[]);
+ const cookie=await f.login(),status=await f.request('/api/crew/status',{cookie});
+ assert.equal(status.body.roster.length,2);assert.ok(status.body.roster.every(a=>a.activity==='waiting'&&a.model==='gpt-5.6-sol'));
+ assert.equal(status.body.sessionLimit.used,0);assert.equal(f.starts,0);
+});

@@ -1,5 +1,5 @@
 type PlayerFrame={active:boolean;spraying:boolean;progress:number;complete:boolean};
-type CrewStatus={authenticated?:boolean;ready?:boolean;localOnly?:boolean};
+type CrewStatus={authenticated?:boolean;ready?:boolean;localOnly?:boolean;roster?:any[]};
 type CrewClientOptions={invite?:string|null};
 
 const API_BASE=(import.meta.env.VITE_CREW_API_BASE||'/api/crew').replace(/\/+$/,'');
@@ -11,6 +11,7 @@ class CrewHttpError extends Error{
 /** Optional local or hosted crew mode. No network or model work runs in the render loop. */
 export function createCrewClient({invite=null}:CrewClientOptions={}){
  let snapshot:any=null,starting=false,started=false,stopped=false,pending=false,resetting=false,lastPoll=0,lastReceived=0,generation=0,disposed=false;
+ let waitingCrew:any=null;
  let access:'checking'|'ready'|'denied'|'offline'='checking';
  let startRequest:Promise<unknown>|null=null;
  const notice=document.createElement('div');notice.className='crew-status';notice.setAttribute('role','status');notice.textContent='AI CREW · checking access';document.body.append(notice);
@@ -30,10 +31,12 @@ export function createCrewClient({invite=null}:CrewClientOptions={}){
   try{
    if(invite)await post('access',{invite});
    invite=null;
-   const status=await request('status') as CrewStatus;
+   let status=await request('status') as CrewStatus;
+   for(let attempt=0;!disposed&&!status.ready&&(status.localOnly||status.authenticated)&&attempt<10;attempt++){say('CREW · waking up the crew bridge…');await new Promise(resolve=>setTimeout(resolve,1000));if(disposed)return;status=await request('status') as CrewStatus;}
    if(disposed)return;
    if(!status.localOnly&&!status.authenticated){access='denied';say('AI CREW · invitation required');return;}
    if(!status.ready){access='offline';say('AI CREW OFFLINE · service is unavailable');return;}
+   waitingCrew=Array.isArray(status.roster)?{status:'waiting-for-hands',preview:true,pressure:0,actors:status.roster}:null;
    access='ready';if(!resetting)stopped=false;say('CREW · waiting for your hands');
   }catch(error){
    invite=null;
@@ -51,6 +54,6 @@ export function createCrewClient({invite=null}:CrewClientOptions={}){
    say(s.status==='stopped'?'CREW · session ended':s.error?'CREW · teammate unavailable':s.pressure?'CREW · water pressure ready':message?`CREW · ${String(message.text).slice(0,140)}`:'CREW · setting up your water supply…');
   }).catch(error=>{if(current===generation){lastReceived=Number.NEGATIVE_INFINITY;say(explain(error,'connection'));}}).finally(()=>{if(current===generation)pending=false;});
  }
- return {update,async reset(){const current=++generation,needsStop=started||starting||!!startRequest;resetting=true;stopped=true;try{await startRequest;if(needsStop)await post('stop',{});}catch{}if(current!==generation)return;started=false;starting=false;pending=false;snapshot=null;startRequest=null;lastReceived=Number.NEGATIVE_INFINITY;resetting=false;stopped=access!=='ready';if(access==='ready')say('CREW · waiting for your hands');},snapshot:()=>snapshot,telemetry:()=>snapshot?{id:snapshot.id,status:snapshot.status,pressure:snapshot.pressure,actors:(snapshot.actors??[]).map((a:any)=>({id:a.id,model:a.model,position:a.position,activity:a.activity,decisions:a.decisions}))}:null,pressure:()=>access==='ready'&&performance.now()-lastReceived<2000?(snapshot?.pressure??0):0,
+ return {update,async reset(){const current=++generation,needsStop=started||starting||!!startRequest;resetting=true;stopped=true;try{await startRequest;if(needsStop)await post('stop',{});}catch{}if(current!==generation)return;started=false;starting=false;pending=false;snapshot=null;startRequest=null;lastReceived=Number.NEGATIVE_INFINITY;resetting=false;stopped=access!=='ready';if(access==='ready')say('CREW · waiting for your hands');},snapshot:()=>snapshot,visualSnapshot:()=>snapshot??(access==='ready'?waitingCrew:null),telemetry:()=>snapshot?{id:snapshot.id,status:snapshot.status,pressure:snapshot.pressure,actors:(snapshot.actors??[]).map((a:any)=>({id:a.id,model:a.model,position:a.position,activity:a.activity,decisions:a.decisions}))}:null,pressure:()=>access==='ready'&&performance.now()-lastReceived<2000?(snapshot?.pressure??0):0,
   dispose(){generation++;disposed=true;stopped=true;invite=null;notice.remove();const stop=()=>fetch(`${API_BASE}/stop`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Forest-Crew':'1'},body:'{}',keepalive:true}).catch(()=>{});if(started||starting||startRequest)void Promise.resolve(startRequest).then(stop,stop);void bootstrap.catch(()=>{});}};
 }

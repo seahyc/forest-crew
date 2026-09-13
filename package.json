@@ -1,10 +1,10 @@
 {
   "name": "forest-crew",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 4180",
+    "dev": "node scripts/start-local.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4180",
     "test": "node --test tests/*.test.mjs",

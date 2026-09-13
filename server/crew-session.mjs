@@ -20,10 +20,11 @@ export const CREW_TOOLS=[
  tool('remember_skill','Write or revise a short transferable method learned from actual successful events in this episode. Include relevant event sequence IDs; never invent evidence. No seeded procedures exist.',{id:STRING,title:STRING,body:STRING,evidence:{type:'array',items:{type:'integer'}},parentIds:{type:'array',items:STRING}}),
 ];
 export const GAME_OXYGEN_COST={'gpt-5.6-luna':2,'gpt-5.6-terra':3,'gpt-5.6-sol':4,'gpt-5.3-codex-spark':1};
+export const createCrewRoster=(models=['gpt-5.6-sol','gpt-5.6-sol'])=>IDS.map((id,i)=>({id,model:models[i],position:{x:i?1.4:-1.8,y:0,z:-2},yaw:0,activity:'waiting',taskId:null}));
 export function createCrewSession({provider,models=['gpt-5.6-sol','gpt-5.6-sol'],skillStore,onEvent=()=>{},now=()=>Date.now(),maxDecisions=6}={}){
  const world=createCrewWorld({claimLeaseRevisions:100});
  const id=randomUUID();let sequence=0,stopped=false,status='starting',error=null,lastPlayerAt=now(),latestPlayer=null;
- const actors=IDS.map((actorId,i)=>({id:actorId,model:models[i],position:{x:i?1.4:-1.8,y:0,z:-2},yaw:0,activity:'waiting',taskId:null,decisions:0,handle:null,job:null,thinking:false,lastRevision:-1}));
+ const actors=createCrewRoster(models).map(actor=>({...actor,decisions:0,handle:null,job:null,thinking:false,lastRevision:-1}));
  const traces=[];let lastPlayerSignal=0;
  const trace=(type,data={})=>{const event={at:now(),type,...data};traces.push(event);if(traces.length>120)traces.shift();onEvent(event);};
  const call=(actorId,tool,args,callId=`host-${++sequence}`)=>world.execute({actorId,callId,tool,args});
