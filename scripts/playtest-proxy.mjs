@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 
 const PREFIX='/api/playtests';
 const UPSTREAM='https://oracle.seahyingcong.com/hand-walk-api/api/playtests';
-const SESSION_VERSION='forest-crew/0.2.2/local-preview';
+const SESSION_VERSION='forest-crew/0.2.6/local-preview';
 const ROUTE=/^\/sessions(?:\/[a-f0-9-]{36}\/(?:telemetry|end|clips\/\d{1,9}))?$/;
 const json=(res,status,value)=>{const body=JSON.stringify(value);res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','content-length':Buffer.byteLength(body)});res.end(body);};
 

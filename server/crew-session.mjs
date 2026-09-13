@@ -1,9 +1,10 @@
 import {randomUUID} from 'node:crypto';
 import {createCrewWorld} from '../prototype/crew-world.mjs';
+import {CREW_MOTION_STEP,stepCrewMotion} from './crew-motion.mjs';
 
 const IDS=['firefighter','engineer'];
 const TASKS=['fetch_hose','connect_hose','repair_pump','operate_pump'];
-const STATIONS={fetch_hose:{x:-1.5,y:0,z:-1},connect_hose:{x:-3.1,y:0,z:-1.55},repair_pump:{x:-3.1,y:0,z:.1},operate_pump:{x:-3.1,y:0,z:.1}};
+const STATIONS={fetch_hose:{x:-1.5,y:0,z:-1},connect_hose:{x:-3.1,y:0,z:-1.55},repair_pump:{x:-3.45,y:0,z:.85},operate_pump:{x:-3.1,y:0,z:.1}};
 const OBJECT=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const STRING={type:'string'};
 const taskId={type:'string',enum:TASKS};
@@ -33,9 +34,15 @@ export function createCrewSession({provider,models=['gpt-5.6-sol','gpt-5.6-sol']
  function tick(dt){
   if(stopped)return;
   if(now()-startedAt>300000||now()-lastPlayerAt>15000){void stop('idle_or_time_limit');return;}
-  for(const a of actors){const j=a.job;if(!j)continue;const dx=j.target.x-a.position.x,dz=j.target.z-a.position.z,d=Math.hypot(dx,dz),step=Math.min(d,Math.max(0,Math.min(dt,.1))*1.8);
-   if(d>.05){a.position.x+=dx/d*step;a.position.z+=dz/d*step;a.yaw=Math.atan2(dx,dz);a.activity='walking';}
-   else{a.yaw=Math.atan2(-4.5-a.position.x,.1-a.position.z);a.activity='working';j.work+=dt;if(j.work>=1.2){const result=call(a.id,'perform_task',{taskId:j.taskId},j.callId);a.job=null;a.activity=result.ok&&j.taskId==='operate_pump'?'pumping':'idle';a.taskId=result.ok&&j.taskId==='operate_pump'?j.taskId:null;trace('tool-result',{actorId:a.id,tool:'perform_task',args:{taskId:j.taskId},result});j.resolve(result);}}
+  let remaining=Math.max(0,Math.min(Number.isFinite(dt)?dt:0,.25));
+  while(remaining>0){const elapsed=Math.min(remaining,CREW_MOTION_STEP);remaining-=elapsed;
+   const motionActors=actors.map(a=>({id:a.id,position:a.position,yaw:a.yaw,target:a.job?.target??null,anchored:a.activity==='pumping'}));
+   const states=stepCrewMotion(motionActors,elapsed);for(let i=0;i<actors.length;i++)actors[i].yaw=motionActors[i].yaw;
+   for(const a of actors){const j=a.job;if(!j)continue;const state=states.get(a.id);
+    if(!state?.arrived){a.activity='walking';a.blockedReason=state?.blockedReason??null;continue;}
+    a.blockedReason=null;a.yaw=Math.atan2(-4.5-a.position.x,.1-a.position.z);a.activity='working';j.work+=elapsed;
+    if(j.work>=1.2){const result=call(a.id,'perform_task',{taskId:j.taskId},j.callId);a.job=null;a.blockedReason=null;a.activity=result.ok&&j.taskId==='operate_pump'?'pumping':'idle';a.taskId=result.ok&&j.taskId==='operate_pump'?j.taskId:null;trace('tool-result',{actorId:a.id,tool:'perform_task',args:{taskId:j.taskId},result});j.resolve(result);}
+   }
   }
  }
  const toolCalls=new Map();
@@ -56,7 +63,7 @@ export function createCrewSession({provider,models=['gpt-5.6-sol','gpt-5.6-sol']
   if(name==='list_skills')return skillStore.list(a.id);
   if(name==='read_skill')return skillStore.read(a.id,args.id);
   if(name==='remember_skill'){const r=await skillStore.save(a.id,args,world.events.map(event=>({...event,episodeId:id})));trace('skill-saved',{actorId:a.id,result:r});return r;}
-  if(name==='observe'){const r=call(a.id,name,args,callId);return {...r,world:{...r.world,player:latestPlayer},positions:actors.map(x=>({id:x.id,position:x.position,activity:x.activity})),stations:STATIONS,evidence:world.events.filter(e=>e.type==='TaskCompleted'||e.type==='TaskActivated').slice(-12)};}
+  if(name==='observe'){const r=call(a.id,name,args,callId);return {...r,world:{...r.world,player:latestPlayer},positions:actors.map(x=>({id:x.id,position:x.position,activity:x.activity,blockedReason:x.blockedReason??null})),stations:STATIONS,evidence:world.events.filter(e=>e.type==='TaskCompleted'||e.type==='TaskActivated').slice(-12)};}
   if(['claim_task','perform_task','release_task'].includes(name)&&!TASKS.includes(args.taskId))return {ok:false,error:'invalid_task'};
   if(name==='perform_task'){
    const s=world.snapshot(),task=s.tasks[args.taskId];
@@ -68,10 +75,10 @@ export function createCrewSession({provider,models=['gpt-5.6-sol','gpt-5.6-sol']
    if(missing)return {ok:false,error:'blocked',blockers:[{task:missing}]};
    if(args.taskId==='operate_pump'&&s.hose.carrier===a.id)return {ok:false,error:'hose_carrier_cannot_operate_pump'};
    if(a.job)return {ok:false,error:'actor_busy'};
-   a.taskId=args.taskId;trace('job-started',{actorId:a.id,taskId:args.taskId});
-   return new Promise(resolve=>{const j={taskId:args.taskId,target:STATIONS[args.taskId],callId,work:0,resolve:r=>{signal?.removeEventListener('abort',cancel);resolve(r);}};const cancel=()=>{if(a.job===j){a.job=null;a.taskId=null;a.activity='idle';}j.resolve({ok:false,error:'job_cancelled'});};a.job=j;signal?.addEventListener('abort',cancel,{once:true});});
+   a.taskId=args.taskId;a.blockedReason=null;trace('job-started',{actorId:a.id,taskId:args.taskId});
+   return new Promise(resolve=>{const j={taskId:args.taskId,target:STATIONS[args.taskId],callId,work:0,resolve:r=>{signal?.removeEventListener('abort',cancel);resolve(r);}};const cancel=()=>{if(a.job===j){a.job=null;a.taskId=null;a.activity='idle';a.blockedReason=null;}j.resolve({ok:false,error:'job_cancelled'});};a.job=j;signal?.addEventListener('abort',cancel,{once:true});});
   }
-  const result=call(a.id,name,args,callId);if(name==='release_task'&&result.ok){a.activity='idle';a.taskId=null;}
+  const result=call(a.id,name,args,callId);if(name==='release_task'&&result.ok){a.activity='idle';a.taskId=null;a.blockedReason=null;}
   trace('tool-result',{actorId:a.id,tool:name,args,result});return result;
  }
  async function run(a){
@@ -100,7 +107,7 @@ export function createCrewSession({provider,models=['gpt-5.6-sol','gpt-5.6-sol']
  }
  async function stop(reason='stopped'){
   if(stopped)return;stopped=true;status='stopped';
-  for(const a of actors){a.job?.resolve({ok:false,error:'session_stopped'});a.job=null;a.taskId=null;const s=world.snapshot();for(const task of Object.values(s.tasks))if(task.owner===a.id)call(a.id,'release_task',{taskId:task.id});a.activity='idle';if(a.handle)await (provider.disposeActor?.(a.handle)??provider.interrupt(a.handle));}
+  for(const a of actors){a.job?.resolve({ok:false,error:'session_stopped'});a.job=null;a.taskId=null;a.blockedReason=null;const s=world.snapshot();for(const task of Object.values(s.tasks))if(task.owner===a.id)call(a.id,'release_task',{taskId:task.id});a.activity='idle';if(a.handle)await (provider.disposeActor?.(a.handle)??provider.interrupt(a.handle));}
   trace('crew-stopped',{reason});
  }
  return {id,start,stop,tick,snapshot,playerTelemetry,world,execute:(actorId,...args)=>execute(actors.find(a=>a.id===actorId),...args)};

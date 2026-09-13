@@ -1,3 +1,4 @@
+import {AimFilter} from './aim-filter.mjs';
 import './controls.css';
 import {drawHandFeedback} from './hand-feedback';
 import {sampleHand} from './handwalk/input/hand-features.mjs';
@@ -29,6 +30,7 @@ const formatBytes=(bytes:number)=>bytes<1024?`${bytes} B`:bytes<1048576?`${Math.
 export function createInputRuntime({canvas,container,getHeading,onEvent}:Options){
  const walker=new TwoHandController();
  const oneHand=new OneHandController({staleMs:ONE_HAND_STALE_MS,pointDwellMs:Infinity});
+ const pointerFilter=new AimFilter();
  const hose=new HoseGestureController({dwellMs:150,staleMs:450});
  const root=document.createElement('section');root.className='forest-input';root.setAttribute('aria-label','Forest Crew hand controls');
  root.innerHTML=`<div class="forest-input__status" role="status" aria-live="polite">Allow camera access, then show your hand.</div>
@@ -70,12 +72,13 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
  const walkingMode=new WalkingModeController({initialMode:inputMode});
  let walkingBlocked=true,walkingNeedsBaseline=true;
  let uiTarget:HTMLButtonElement|null=null,uiTargetSince=0,uiTargetFired=false,lastPointer={x:.5,y:.5},pointerTracked=false;
+ let waterFlowing=false,waterReason='spray requested';
  let recordTimer=0,recordCountdownEnds=0,recordingError='',lastFrameState:InputFrame={active:false,forward:0,turn:0,headingTarget:null,gait:emptyGait(),mode:'setup',aim:{x:.5,y:.5},spraying:false};
 
  const qaMode=new URLSearchParams(location.search).get('qa')==='1';
  const criticalEvents=new Set(['complete','extinguish','gesture-select','calibrated','focus','reset','camera-error','tracker-error']);
- const emit=(type:string,data:any={})=>{const payload={version:'0.2.4',buildId:BUILD_ID,scenario:SCENARIO,fixture:qaMode,inputSource:qaInjected?'sampled-hand-fixture':'camera',...data};playtest.record(type,payload);const now=performance.now();if(playtest.state==='recording'&&(criticalEvents.has(type)||now-lastFlush>=1200)){lastFlush=now;void playtest.flushTelemetry();}onEvent?.(type,payload);};
- const recorder=new CompactRecorder({world:canvas,camera:video,session:()=>playtest.session,startedAt:()=>playtest.started,record:emit,uploadClip:(blob,startMs,endMs)=>playtest.uploadClip(blob,startMs,endMs),publicMode:true,captureWidth:480,captureHeight:270,captureFrameRate:5,videoBitsPerSecond:220000,overlay:()=>({phase:lastFrameState.mode,reason:lastFrameState.spraying?'spraying':inputMode==='one-hand'?oneHand.diagnostics(performance.now()).decision:lastFrameState.active?'moving':'idle',choice:uiTarget?.dataset.action||'',dwell:uiTarget?clamp((performance.now()-uiTargetSince)/900):0,cursorX:lastPointer.x,cursorY:lastPointer.y,cursorVisible:true,cursorTracked:pointerTracked}),onStatus:(state,detail)=>{if(state==='error'){recordingError=detail;recorder.setEnabled(false);playtest.fail(detail);}updateRecordingStatus(playtest);}});
+ const emit=(type:string,data:any={})=>{const payload={version:'0.2.6',buildId:BUILD_ID,scenario:SCENARIO,fixture:qaMode,inputSource:qaInjected?'sampled-hand-fixture':'camera',...data};playtest.record(type,payload);const now=performance.now();if(playtest.state==='recording'&&(criticalEvents.has(type)||now-lastFlush>=1200)){lastFlush=now;void playtest.flushTelemetry();}onEvent?.(type,payload);};
+ const recorder=new CompactRecorder({world:canvas,camera:video,session:()=>playtest.session,startedAt:()=>playtest.started,record:emit,uploadClip:(blob,startMs,endMs)=>playtest.uploadClip(blob,startMs,endMs),publicMode:true,captureWidth:480,captureHeight:270,captureFrameRate:5,videoBitsPerSecond:220000,overlay:()=>({phase:lastFrameState.mode,reason:lastFrameState.spraying?(waterFlowing?'water flowing':waterReason):inputMode==='one-hand'?oneHand.diagnostics(performance.now()).decision:lastFrameState.active?'moving':'idle',choice:uiTarget?.dataset.action||'',dwell:uiTarget?clamp((performance.now()-uiTargetSince)/900):0,cursorX:lastPointer.x,cursorY:lastPointer.y,cursorVisible:true,cursorTracked:pointerTracked}),onStatus:(state,detail)=>{if(state==='error'){recordingError=detail;recorder.setEnabled(false);playtest.fail(detail);}updateRecordingStatus(playtest);}});
 
  function updateRecordingStatus(snapshot:any){
   localLabel.textContent=snapshot.error||recordingError?'LOCAL · SAVE UNAVAILABLE':snapshot.state==='recording'?`LOCAL · SAVING ${formatBytes(snapshot.savedBytes||0)}`:snapshot.state==='starting'?'LOCAL · OPENING':snapshot.state==='stopped'?'LOCAL · SAVED':snapshot.state==='opted-out'?'LOCAL · OFF':'LOCAL · READY';
@@ -95,12 +98,12 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
  }
  function clearUiAuthority(){uiTarget=null;uiTargetSince=0;uiTargetFired=false;root.querySelectorAll('.forest-input__hover').forEach(node=>node.classList.remove('forest-input__hover'));cursor.style.setProperty('--dwell','0');}
  function setHud(open:boolean){hud.classList.toggle('is-open',open);hud.setAttribute('aria-hidden',String(!open));hudOpen.hidden=open;clearUiAuthority();emit('hud',{open});}
- function pointerHand(){const candidates=hands.filter(hand=>(hand.aimPose??hand.pointing)===true&&Number.isFinite(hand.pointX)&&Number.isFinite(hand.pointY));const reference={x:.85-lastPointer.x*.7,y:.12+lastPointer.y*.7};return candidates.reduce((best,hand)=>!best||Math.hypot(hand.pointX-reference.x,hand.pointY-reference.y)<Math.hypot(best.pointX-reference.x,best.pointY-reference.y)?hand:best,null);}
+ function pointerHand(){const candidates=hands.filter(hand=>((hand.aimPose??hand.pointing)===true||hand.aimHoldPose===true)&&Number.isFinite(hand.pointX)&&Number.isFinite(hand.pointY));const reference={x:.85-lastPointer.x*.7,y:.12+lastPointer.y*.7};return candidates.reduce((best,hand)=>!best||Math.hypot(hand.pointX-reference.x,hand.pointY-reference.y)<Math.hypot(best.pointX-reference.x,best.pointY-reference.y)?hand:best,null);}
  function updatePointer(now:number){
   const point=pointerHand();pointerTracked=Boolean(point)&&now-lastResult<=staleLimit();
   // Expand the comfortable center camera area across the viewport so edge
   // controls remain reachable without forcing a player's arm out of frame.
-  if(point){lastPointer={x:clamp((1-point.pointX-.15)/.7),y:clamp((point.pointY-.12)/.7)};}
+  if(point){const currentHose=hose.read(now);lastPointer=currentHose.blockWalking?currentHose.aim:pointerFilter.update({x:clamp((1-point.pointX-.15)/.7),y:clamp((point.pointY-.12)/.7)},now);if(currentHose.blockWalking){pointerFilter.reset();pointerFilter.update(lastPointer,now);}}
   cursor.style.left=`${lastPointer.x*innerWidth}px`;cursor.style.top=`${lastPointer.y*innerHeight}px`;cursor.classList.toggle('is-lost',!pointerTracked);
   const hit=pointerTracked?document.elementFromPoint(lastPointer.x*innerWidth,lastPointer.y*innerHeight)?.closest<HTMLButtonElement>('[data-gesture]'):null;
   const next=hit&&root.contains(hit)&&!hit.disabled?hit:null;
@@ -110,7 +113,7 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
   if(progress===1&&!uiTargetFired){uiTargetFired=true;emit('gesture-select',{action:uiTarget.dataset.action});uiTarget.click();}
   return true;
  }
- function resetControllers(){walker.reset();oneHand.reset();hose.reset();walkingMode.reset(inputMode);walkingBlocked=true;walkingNeedsBaseline=true;}
+ function resetControllers(){pointerFilter.reset();walker.reset();oneHand.reset();hose.reset();walkingMode.reset(inputMode);walkingBlocked=true;walkingNeedsBaseline=true;}
  function openMenu(source:string){baseMode='menu';panel.hidden=false;resetControllers();clearUiAuthority();emit('menu-open',{source});setStatus('');}
  function continuePlay(){panel.hidden=true;baseMode='setup';calibrationSince=null;updateFraming(workerReady,0);resetControllers();clearUiAuthority();emit('continue');setStatus(setupInstruction());}
  function resetCalibration(){panel.hidden=true;baseMode='setup';calibrationSince=null;updateFraming(workerReady,0);resetControllers();clearUiAuthority();emit('reset');setStatus(setupInstruction());}
@@ -183,6 +186,7 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
   const stale=now-lastResult>staleLimit()||hands.length===0||!visible||suspended;if(stale){walkingNeedsBaseline=true;walker.reset();oneHand.read(now);hose.read(now);drawHands(rawHands);pointerTracked=false;cursor.classList.add('is-lost');clearUiAuthority();}
   const overUi=Boolean(uiTarget),single=oneHand.read(now,{overUi}),hoseState=hose.read(now,{overUi}),walking=inputMode==='one-hand'?single:walker.read(now),hoseActive=hoseState.blockWalking,hoseAim=hoseState.aim,hoseSpraying=hoseState.spraying;const mode:Mode=baseMode==='menu'?'menu':baseMode==='setup'?'setup':stale?'lost':hoseActive?'hose':'walk';const active=mode==='walk'||mode==='hose';
   const result:InputFrame={active:active&&visible&&!suspended,forward:mode==='walk'&&!walkingBlocked&&visible&&!suspended?walking.forward:0,turn:mode==='walk'&&!walkingBlocked&&visible&&!suspended?walking.turn:0,headingTarget:mode==='walk'&&!walkingBlocked&&visible&&!suspended?walking.headingTarget:null,gait:mode==='walk'&&!walkingBlocked&&visible&&!suspended?walking.gait:emptyGait(),mode,aim:hoseAim as {x:number;y:number},spraying:mode==='hose'&&visible&&!suspended&&hoseSpraying===true};
+  if(mode==='hose'&&!overUi){lastPointer={...result.aim};cursor.style.left=`${result.aim.x*innerWidth}px`;cursor.style.top=`${result.aim.y*innerHeight}px`;}
   aimNode.style.left=`${result.aim.x*innerWidth}px`;aimNode.style.top=`${result.aim.y*innerHeight}px`;aimNode.classList.toggle('is-idle',mode!=='hose');
   if(mode==='hose'||mode==='walk'||mode==='menu')setStatus('');else if(mode==='lost'&&baseMode==='walk')setStatus(`${inputMode==='one-hand'?'Hand':'Hands'} lost · bring ${inputMode==='one-hand'?'it':'them'} back into view.`);
   if(now-lastTelemetry>100){lastTelemetry=now;emit('input-frame',{timestamp:Math.round(now),inputMode,inputPreference,walkingBlocked,intentReason:hoseState.reason,active:result.active,forward:result.forward,turn:result.turn,headingTarget:result.headingTarget,gait:result.gait,mode:result.mode,aim:result.aim,spraying:result.spraying,trackingAge:Number.isFinite(lastResult)?now-lastResult:null});}
@@ -198,5 +202,5 @@ export function createInputRuntime({canvas,container,getHeading,onEvent}:Options
   (window as any).__forestInputQA={injectHands(sampled:any[],landmarks:RawHand[]=sampled.flatMap(hand=>Array.isArray(hand.landmarks)?[{id:String(hand.id),landmarks:hand.landmarks}]:[]),now=performance.now()){qaInjected=true;ingest(sampled,landmarks,now,0);return frame(now);},releaseInjection(){qaInjected=false;hands=[];lastResult=-Infinity;resetControllers();},diagnostics};
  }
  updateModeCopy();updateRecordingStatus(playtest);
- return {start,frame,record,reset,dispose,diagnostics,setHoseFeedback:(text:string)=>{if(aimNode.dataset.feedback!==text){aimNode.dataset.feedback=text;aimNode.querySelector('span')!.textContent=text;}}};
+ return {start,frame,record,reset,dispose,diagnostics,setWaterState:(state:{flowing:boolean;reason:string})=>{waterFlowing=state.flowing;waterReason=state.reason;},setHoseFeedback:(text:string)=>{if(aimNode.dataset.feedback!==text){aimNode.dataset.feedback=text;aimNode.querySelector('span')!.textContent=text;}}};
 }

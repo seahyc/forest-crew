@@ -8,6 +8,7 @@ import {createFireSimulation} from './fire-simulation.mjs';
 import {createFireEffects} from './fire-effects';
 import {createPlayerHeat} from './player-heat.mjs';
 import {createCrewClient} from './crew-client';
+import {createWaterSupply} from './water-supply.mjs';
 import {buildHosePath} from './hose-path.mjs';
 import {HOSE_ANCHOR} from './handwalk/avatar';
 
@@ -27,6 +28,7 @@ crewInvite=null;
 if(crew){document.title='Forest Crew · AI crew';const chapter=document.querySelector('.chapter');if(chapter)chapter.textContent='AI crew';}
 let crewVisuals:Awaited<ReturnType<typeof import('./crew-visuals').createCrewVisuals>>|null=null;
 if(crew)void import('./crew-visuals').then(async({createCrewVisuals})=>{crewVisuals=createCrewVisuals(env.scene,env.shadows);await crewVisuals.ready;}).catch(()=>console.error('Crew visuals unavailable'));
+const waterSupply=createWaterSupply();
 const playerHeat=createPlayerHeat({onEvent:(type:string,data:any)=>input?.record(type,data)});
 let rescueUntil=0;const sootMaterials:{material:PBRMaterial;color:Color3}[]=[];
 const heatOverlay=document.createElement('div');heatOverlay.className='heat-overlay';heatOverlay.setAttribute('aria-hidden','true');document.body.append(heatOverlay);
@@ -37,7 +39,7 @@ let hose=MeshBuilder.CreateTube('ivory supply hose',{path:hosePath,radius:.045,t
 const hoseStart=new Vector3(-4.5,.48,-.5),hoseEnd=new Vector3(Number.POSITIVE_INFINITY,0,0);
 let nowSeconds=0,last=performance.now(),lastTrace=0,lastHud=0,lastHose=Number.NEGATIVE_INFINITY,ready=false,disposed=false,qaOverride:any=null,latestState:any=null,latestImpact:Vector3|null=null;
 let nozzleVisible=true,lastAimValid='',lastMode='',lastComplete='',lastPatchCount='',lastRangeNote='',lastFps='',lastProgress='';
-function reset(){void crew?.reset();movement.reset();fire.reset();playerHeat.reset();rescueUntil=0;$('completion').hidden=true;input?.record('scenario-reset',{scenario:crew?'agent-supply':'hose-baseline',seed:73011});}
+function reset(){void crew?.reset();movement.reset();fire.reset();waterSupply.reset();playerHeat.reset();rescueUntil=0;$('completion').hidden=true;input?.record('scenario-reset',{scenario:crew?'agent-supply':'hose-baseline',seed:73011});}
 input=createInputRuntime({canvas,container:$('controls'),getHeading:()=>movement.player.rotation.y,onEvent:(type)=>{if(type==='reset')reset();}});
 function impactAt(aim:{x:number,y:number},origin:Vector3){
  // Babylon converts CSS picking coordinates to render pixels internally.
@@ -86,9 +88,11 @@ function renderFrame(){
  let impact=qaOverride?.impact?new Vector3(qaOverride.impact.x,.03,qaOverride.impact.z):impactAt(frame.aim,origin);
  crew?.update(now,{active:frame.active&&!sceneReview,spraying:frame.spraying,progress:fire.snapshot().progress,complete:fire.snapshot().complete});
  crewVisuals?.update(dt,crew?.visualSnapshot());
- const pressure=crew?crew.pressure():1;
- const spraying=frame.spraying&&!sceneReview&&pressure>0;
- input.setHoseFeedback(frame.mode!=='hose'?'':pressure<=0?'Waiting for water pressure':!impact?'Aim lower or walk closer':'');
+ const crewPressure=crew?crew.pressure():1;
+ const water=waterSupply.update(dt,{crewPressure,requested:frame.spraying,active:frame.active&&!sceneReview});
+ const pressure=water.pressure,spraying=water.flowing;
+ input.setWaterState({flowing:spraying,reason:water.source==='empty'?'tank empty · waiting for crew':water.source==='reserve'?'starter tank':'crew supply'});
+ input.setHoseFeedback(frame.mode!=='hose'?'':pressure<=0?'Tank empty · waiting for crew':water.source==='reserve'?`Tank ${Math.ceil(water.remainingSeconds)}s · ${!impact?'aim lower or move closer':'water flowing'}`:!impact?'Water flowing · aim lower or walk closer':'Water flowing');
  const fireState=fire.update(dt,{active:frame.active&&!sceneReview,spraying,impact:impact?{x:impact.x,z:impact.z}:null,pressure});
  let heat=playerHeat.update(dt,{position:state.position,patches:fireState.patches,active:frame.active&&!sceneReview});
  if(heat.needsRescue){movement.reset();playerHeat.reset();rescueUntil=now+3500;input.record('rescued',{reason:'fire-contact',fireProgress:fireState.progress});}
@@ -97,12 +101,14 @@ function renderFrame(){
  const heatCopy=now<rescueUntil?'Toasty. Back to safety.':`YOU ARE BURNING · BACK UP · ${Math.ceil(heat.health*100)}%`;
  if(heatNotice.textContent!==heatCopy)heatNotice.textContent=heatCopy;
  for(const item of sootMaterials){item.material.albedoColor.copyFrom(item.color).scaleInPlace(1-(1-heat.health)*.6);item.material.emissiveColor.set(heat.burning?.12:0,heat.burning?.015:0,0);}
- const visualImpact=impact??origin.add(env.camera.getForwardRay().direction.scale(12));if(!impact)visualImpact.y=-.32;effects.update(dt,nowSeconds,fireState,{active:spraying,origin,impact:visualImpact});latestImpact=impact;
+ const aimRay=env.scene.createPickingRay(frame.aim.x*canvas.clientWidth,frame.aim.y*canvas.clientHeight,Matrix.Identity(),env.camera,false);
+ const visualTarget=aimRay.origin.add(aimRay.direction.scale(30));
+ const visualImpact=impact??origin.add(visualTarget.subtract(origin).normalize().scale(14));effects.update(dt,nowSeconds,fireState,{active:spraying,origin,impact:visualImpact});latestImpact=impact;
  const aimValid=String(Boolean(impact));if(aimValid!==lastAimValid){lastAimValid=aimValid;document.body.dataset.aimValid=aimValid;}
  updateHose(now,origin);
  const showNozzle=frame.mode==='hose'||sceneReview;if(showNozzle!==nozzleVisible){nozzleVisible=showNozzle;nozzle.setEnabled(showNozzle);}env.update(nowSeconds);env.scene.render();
- latestState={...state,fire:fireState,health:heat,input:frame,impact:impact?{x:impact.x,y:impact.y,z:impact.z}:null,frameMs:dt*1000,crew:crew?.snapshot()};
- if(now-lastTrace>100){lastTrace=now;input.record('world-state',{position:state.position,yaw:state.yaw,speed:state.speed,displacement:state.displacement,blocked:state.blocked,gait:state.gait,camera:state.camera,fire:fireState,health:heat,impact:latestState.impact,pressure,crew:crew?.telemetry(),mode:frame.mode,dt,fps:env.engine.getFps(),quality:env.renderQuality(),seed:73011});}
+ latestState={...state,fire:fireState,health:heat,input:frame,impact:impact?{x:impact.x,y:impact.y,z:impact.z}:null,frameMs:dt*1000,crew:crew?.snapshot(),water};
+ if(now-lastTrace>100){lastTrace=now;input.record('world-state',{position:state.position,yaw:state.yaw,speed:state.speed,displacement:state.displacement,blocked:state.blocked,gait:state.gait,camera:state.camera,fire:fireState,health:heat,impact:latestState.impact,pressure,crewPressure,water,crew:crew?.telemetry(),mode:frame.mode,dt,fps:env.engine.getFps(),quality:env.renderQuality(),seed:73011});}
  if(now-lastHud>150){lastHud=now;const progress=`${fireState.progress*100}%`,patchCount=`${fireState.extinguished} / 3 fires out`,rangeNote=frame.mode==='hose'?(impact?'Water on target':'Aim lower or move closer'):'Supply connected',fps=`${Math.round(env.engine.getFps())} fps`,complete=String(fireState.complete);if(progress!==lastProgress){lastProgress=progress;$('progress-fill').style.width=progress;}if(patchCount!==lastPatchCount){lastPatchCount=patchCount;$('patch-count').textContent=patchCount;}if(rangeNote!==lastRangeNote){lastRangeNote=rangeNote;$('range-note').textContent=rangeNote;}if(fps!==lastFps){lastFps=fps;$('fps').textContent=fps;}if($('completion').hidden===fireState.complete)$('completion').hidden=!fireState.complete;if(frame.mode!==lastMode){lastMode=frame.mode;document.documentElement.dataset.mode=frame.mode;}if(complete!==lastComplete){lastComplete=complete;document.documentElement.dataset.complete=complete;}}
 }
 function syncRendering(){

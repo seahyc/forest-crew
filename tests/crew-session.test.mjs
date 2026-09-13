@@ -51,6 +51,22 @@ test('requires a current claim and delays world effects until travel and work ti
   await session.stop();
 });
 
+test('crew work time starts only after the actor reaches the physical station',async()=>{
+ const session=makeSession();
+ await claim(session,'engineer','repair_pump');
+ const pending=execute(session,'engineer','perform_task',{taskId:'repair_pump'});
+ let settled=false;pending.then(()=>{settled=true;});await Promise.resolve();
+ for(let i=0;i<12;i++)session.tick(.1);
+ const travelling=session.snapshot().actors.find(actor=>actor.id==='engineer');
+ assert.equal(travelling.activity,'walking');
+ assert.equal(settled,false);
+ assert.equal(session.snapshot().world.pump.repaired,false);
+ const result=await finishPending(session,pending);
+ assert.equal(result.ok,true);
+ assert.equal(session.snapshot().world.pump.repaired,true);
+ await session.stop();
+});
+
 test('binds claims and world outcomes to the acting crew member across a cooperative supply chain',async()=>{
   const session=makeSession();
   await claim(session,'firefighter','fetch_hose');

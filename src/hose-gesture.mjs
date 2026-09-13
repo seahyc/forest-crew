@@ -1,3 +1,4 @@
+import {AimFilter} from './aim-filter.mjs';
 const STALE_MS=450;
 const OWNER_RADIUS=.24;
 const WALK_RELEASE_MS=180;
@@ -12,8 +13,8 @@ const flexDifference=hand=>Number.isFinite(hand.indexFlex)&&Number.isFinite(hand
  */
 export class HoseGestureController{
  constructor({dwellMs=150,staleMs=STALE_MS}={}){this.dwellMs=dwellMs;this.staleMs=staleMs;this.reset();}
- reset(){this.candidate=false;this.since=0;this.last=-Infinity;this.active=false;this.aim={x:.5,y:.5};this.pointerId=null;this.ownerPoint=null;this.candidateFlex=null;this.needsAimEntry=false;this.walkingSince=null;this.reason=null;}
- clear(now){this.candidate=false;this.since=Number.isFinite(now)?now:0;this.active=false;this.pointerId=null;this.ownerPoint=null;this.candidateFlex=null;this.needsAimEntry=false;this.walkingSince=null;this.reason=null;}
+ reset(){this.filter=new AimFilter();this.candidate=false;this.since=0;this.last=-Infinity;this.active=false;this.aim={x:.5,y:.5};this.pointerId=null;this.ownerPoint=null;this.candidateFlex=null;this.needsAimEntry=false;this.walkingSince=null;this.reason=null;}
+ clear(now){this.filter.reset();this.candidate=false;this.since=Number.isFinite(now)?now:0;this.active=false;this.pointerId=null;this.ownerPoint=null;this.candidateFlex=null;this.needsAimEntry=false;this.walkingSince=null;this.reason=null;}
  update(hands,now,{overUi=false}={}){
   if(!Number.isFinite(now)||!Array.isArray(hands)){this.reset();return this.read(now,{overUi});}
   const valid=hands.filter(hand=>hand&&Number.isFinite(hand.pointX)&&Number.isFinite(hand.pointY));
@@ -24,7 +25,7 @@ export class HoseGestureController{
   if(this.ownerPoint&&!stale){const nearest=valid.reduce((best,hand)=>!best||distance(hand,this.ownerPoint)<distance(best,this.ownerPoint)?hand:best,null);if(nearest&&distance(nearest,this.ownerPoint)<=OWNER_RADIUS)owner=nearest;}
   if(owner&&(owner.open===true||owner.fist===true)){this.last=now;this.clear(now);return this.read(now);}
   let pointer=owner;
-  if(!pointer){pointer=valid.find(hand=>hand.aimPose===true||(!('aimPose' in hand)&&!('aimHoldPose' in hand)&&!('walkingPose' in hand)&&hand.pointing===true));if(!pointer){this.last=now;this.clear(now);return this.read(now);}this.since=now;this.active=false;this.candidate=true;this.candidateFlex=flexDifference(pointer);this.needsAimEntry=false;this.walkingSince=null;}
+  if(!pointer){pointer=valid.find(hand=>hand.aimPose===true||(!('aimPose' in hand)&&!('aimHoldPose' in hand)&&!('walkingPose' in hand)&&hand.pointing===true));if(!pointer){this.last=now;this.clear(now);return this.read(now);}this.filter.reset();this.since=now;this.active=false;this.candidate=true;this.candidateFlex=flexDifference(pointer);this.needsAimEntry=false;this.walkingSince=null;}
   const geometric='aimPose' in pointer||'aimHoldPose' in pointer||'walkingPose' in pointer;
   if(!geometric&&pointer.pointing!==true){this.last=now;this.clear(now);return this.read(now);}
   if(stale){
@@ -50,7 +51,7 @@ export class HoseGestureController{
   if(!this.active)this.candidateFlex=flex;
   this.last=now;this.pointerId=pointer.id===undefined?null:String(pointer.id);this.ownerPoint={pointX:pointer.pointX,pointY:pointer.pointY};
   // Camera is mirrored in the UI, so normalized horizontal aim is mirrored too.
-  this.aim={x:clamp((.85-pointer.pointX)/.7),y:clamp((pointer.pointY-.12)/.7)};
+  this.aim=this.filter.update({x:clamp((.85-pointer.pointX)/.7),y:clamp((pointer.pointY-.12)/.7)},now);
   if((!geometric||pointer.aimPose===true||pointer.aimHoldPose===true)&&!this.needsAimEntry&&now-this.since>=this.dwellMs)this.active=true;
   this.reason=this.active?'active':this.reason||'candidate';
   return this.read(now);
