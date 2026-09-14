@@ -33,6 +33,10 @@ npm run build
 npm run preview
 ```
 
+## Gesture replay
+
+Run `npm run test:gestures -- --recipe hose-sweep` against the local dev server to exercise real controls using raw finger joints, without a camera or model calls. The same runner accepts private recorded telemetry and saves compressed diagnostic traces plus screenshots. See [gesture replay and its limits](docs/GESTURE-REPLAY.md).
+
 ## What is here
 
 - `src/main.ts` wires the browser scene, controls, simulation, and telemetry together.

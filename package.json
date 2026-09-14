@@ -11,7 +11,8 @@
     "dev:review": "node scripts/start-local.mjs",
     "build:public": "tsc --noEmit && vite build --mode public --outDir dist-public",
     "crew:server": "node server/index.mjs",
-    "crew:smoke": "node scripts/crew-smoke.mjs"
+    "crew:smoke": "node scripts/crew-smoke.mjs",
+    "test:gestures": "node scripts/replay-gestures.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "9.25.0",

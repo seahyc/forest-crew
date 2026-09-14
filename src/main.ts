@@ -23,7 +23,8 @@ const movement=createLocomotion(env.scene,env.camera,env.colliders,env.spawn,env
 let input:ReturnType<typeof createInputRuntime>;
 const fire=createFireSimulation({onEvent:(type:string,data:any)=>input?.record(type,data)} as any);
 const effects=createFireEffects(env.scene);
-const crew=params.get('crew')!=='0'&&(params.get('crew')==='1'||import.meta.env.VITE_CREW_DEFAULT==='1')&&!sceneReview?createCrewClient({invite:crewInvite}):null;
+const gestureReplay=import.meta.env.DEV&&qa&&params.get('replay')==='1';
+const crew=!gestureReplay&&params.get('crew')!=='0'&&(params.get('crew')==='1'||import.meta.env.VITE_CREW_DEFAULT==='1')&&!sceneReview?createCrewClient({invite:crewInvite}):null;
 crewInvite=null;
 if(crew){document.title='Forest Crew · AI crew';const chapter=document.querySelector('.chapter');if(chapter)chapter.textContent='AI crew';}
 let crewVisuals:Awaited<ReturnType<typeof import('./crew-visuals').createCrewVisuals>>|null=null;
